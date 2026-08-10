@@ -112,3 +112,24 @@ export function jsonCache(file) {
     size: () => Object.keys(data).length,
   };
 }
+
+/**
+ * 보드별 수집 방식을 확인한다.
+ *
+ * 🔴 예전에는 `=== 'off'` 만 봤다. 그래서 `offf` 같은 오타가 **수집으로 흘러갔다** —
+ *    사용자는 껐다고 믿는데 계속 긁는다. 아는 값만 통과시키고 나머지는 멈춘다.
+ * 🔴 `api`(공식 API)와 `web`(공개 페이지 HTML 파싱)을 구분해 적는다.
+ *    같은 이름으로 묶으면 이 도구가 무엇을 하고 있는지 문서가 흐려진다.
+ */
+export const SOURCE_MODES = ['api', 'web', 'browser', 'off'];
+
+export function requireSourceEnabled(profile, board, fallback = 'api') {
+  const mode = profile.sources?.[board] ?? fallback;
+  if (!SOURCE_MODES.includes(mode)) {
+    throw new Error(
+      `profile.yml 의 sources.${board} 값이 "${mode}" 입니다. ` +
+      `${SOURCE_MODES.join(' · ')} 중 하나여야 합니다.`);
+  }
+  if (mode === 'off') throw new Error(`profile.yml 의 sources.${board} 가 off 입니다.`);
+  return mode;
+}

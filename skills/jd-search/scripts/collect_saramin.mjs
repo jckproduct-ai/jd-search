@@ -21,7 +21,7 @@
  *    → 상세를 받아 전체 근무지를 `location.all` 에 담는다. 게이트가 하나라도 걸리면 통과시킨다.
  */
 import fs from 'node:fs';
-import { loadProfile, statePath, readJson, writeJson } from './lib/io.mjs';
+import { loadProfile, statePath, readJson, writeJson, requireSourceEnabled } from './lib/io.mjs';
 import { matchesAny } from './lib/text.mjs';
 import { listByQuery, toRecord } from './lib/saramin.mjs';
 
@@ -33,10 +33,8 @@ const flag = (name, def = null) => {
 const has = name => argv.includes(`--${name}`);
 
 const profile = loadProfile(flag('profile') || undefined);
-if ((profile.sources?.saramin ?? 'api') === 'off') {
-  console.error('profile.yml 의 sources.saramin 이 off 입니다.');
-  process.exit(1);
-}
+try { requireSourceEnabled(profile, 'saramin', 'web'); }
+catch (e) { console.error(e.message); process.exit(1); }
 
 const roles = profile.target?.roles ?? [];
 const queries = String(flag('query') || roles.join(','))

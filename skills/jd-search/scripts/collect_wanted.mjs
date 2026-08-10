@@ -16,7 +16,7 @@
  *         → 404 = 내려간 공고
  */
 import fs from 'node:fs';
-import { loadProfile, statePath, readJson, writeJson } from './lib/io.mjs';
+import { loadProfile, statePath, readJson, writeJson, requireSourceEnabled } from './lib/io.mjs';
 import { matchesAny } from './lib/text.mjs';
 // 🔴 수집·마감재확인이 같은 경로를 쓰도록 원티드 로직은 lib/wanted.mjs 하나로 모아 둔다.
 import { ORIGIN, listByQuery as listRaw, fetchDetail, toRecord } from './lib/wanted.mjs';
@@ -29,10 +29,8 @@ const flag = (name, def = null) => {
 const has = name => argv.includes(`--${name}`);
 
 const profile = loadProfile(flag('profile') || undefined);
-if ((profile.sources?.wanted ?? 'api') === 'off') {
-  console.error('profile.yml 의 sources.wanted 가 off 입니다.');
-  process.exit(1);
-}
+try { requireSourceEnabled(profile, 'wanted', 'api'); }
+catch (e) { console.error(e.message); process.exit(1); }
 
 const queries = String(flag('query') || (profile.target.roles ?? []).join(','))
   .split(',').map(s => s.trim()).filter(Boolean);

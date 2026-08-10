@@ -21,6 +21,7 @@ import { parsePostingUrl } from '../lib/board_url.mjs';
 import { isSamePosting, planMerge, pickPrimary, regionKeys, mergeVerdicts, normalizeTitle } from '../lib/merge.mjs';
 import { gradeCompany, compareToBaseline, interviewQuestions } from '../lib/grade.mjs';
 import { parseYaml } from '../lib/yaml.mjs';
+import { requireSourceEnabled, SOURCE_MODES } from '../lib/io.mjs';
 import { experienceTags, EXPERIENCE_TAG_LABEL } from '../lib/experience.mjs';
 import { mask } from '../lib/http.mjs';
 import { runIntegration } from './integration.mjs';
@@ -295,7 +296,7 @@ group('사람인 파싱', () => {
   eq(active.company, '(주)수산아이앤티', '  상세에서 회사명을 읽는다');
   ok(active.csn?.length > 8, '  상세에서 csn 을 읽는다');
 
-  // 🔴 본문이 이미지뿐인 공고 — 실측 4건 중 2건. 빈 파일을 "원문 확보"로 세면 안 된다.
+  // 🔴 본문이 이미지뿐인 공고 — 실측 14건 중 3건. 빈 파일을 "원문 확보"로 세면 안 된다.
   const bodyText = parseBody(fx('saramin-body-text.html'));
   eq(bodyText.kind, 'text', '  글자 본문은 text');
   ok(bodyText.text.length > 200, '  본문 글자를 담는다', String(bodyText.text.length));
@@ -554,6 +555,28 @@ group('연차 분류 (내 연차 대비 상대 판정)', () => {
     '  라벨에 "주니어" 같은 절대 표현을 쓰지 않는다');
   eq(Object.keys(EXPERIENCE_TAG_LABEL).sort().join(','), 'aboveMyLevel,belowMyLevel',
     '  태그 키는 상대 표현 두 개뿐이다');
+});
+
+// ══ 5.6 수집 방식 가드 ══════════════════════════════════════════════════════
+// 🔴 예전에는 `=== 'off'` 만 봐서 `offf` 같은 오타가 수집으로 흘러갔다.
+//    사용자는 껐다고 믿는데 계속 긁는다 — 동의 없는 수집이 되는 지점이다.
+group('수집 방식 가드', () => {
+  const en = (v, board = 'saramin') => requireSourceEnabled({ sources: { [board]: v } }, board, 'web');
+  const throws = (v, label) => {
+    let threw = false;
+    try { en(v); } catch { threw = true; }
+    ok(threw, label);
+  };
+
+  eq(en('api'), 'api', '  api 는 통과');
+  eq(en('web'), 'web', '  web(공개 페이지 파싱)은 api 와 구분해 통과');
+  eq(en('browser'), 'browser', '  browser 는 통과 — 동의 절차는 호출부가 한다');
+  throws('off', '  off 는 수집을 막는다');
+  throws('offf', '  🔴 오타는 조용히 수집으로 흘러가지 않는다');
+  throws('API', '  대문자 표기도 통과시키지 않는다');
+  throws('', '  빈 문자열도 막는다');
+  eq(requireSourceEnabled({}, 'saramin', 'web'), 'web', '  미설정이면 기본값을 쓴다');
+  eq(SOURCE_MODES.join(','), 'api,web,browser,off', '  아는 값은 이 넷뿐이다');
 });
 
 // ══ 6. 설정·보안 ════════════════════════════════════════════════════════════
