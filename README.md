@@ -5,6 +5,13 @@
 <sub>Claude Code · Codex · Cursor · Gemini CLI</sub>
 </p>
 
+<p align="center">
+<a href="https://github.com/jckproduct-ai/jd-search/actions/workflows/test.yml"><img alt="test" src="https://github.com/jckproduct-ai/jd-search/actions/workflows/test.yml/badge.svg"></a>
+<img alt="node" src="https://img.shields.io/badge/node-%E2%89%A520-brightgreen">
+<img alt="dependencies" src="https://img.shields.io/badge/dependencies-0-brightgreen">
+<img alt="license" src="https://img.shields.io/badge/license-AGPL--3.0-blue">
+</p>
+
 ---
 
 **이력서 1개 + 집주소 1개를 넣으면, 다닐 수 있는 범위 안의 내 직군 공고를 전부 모아 각 회사의 재무 위험도까지 붙여 리포트 한 장으로 만듭니다.**
@@ -23,7 +30,7 @@
 
 ```bash
 # Claude Code
-claude plugin marketplace add <owner>/jd-search
+claude plugin marketplace add jckproduct-ai/jd-search
 ```
 
 설치 후 그냥 말하면 됩니다.
@@ -103,7 +110,7 @@ export DATA_GO_KR_KEY="공공데이터포털에서 발급받은 키"   # 없으�
 
 이력서를 읽어 검색 키워드를 만듭니다. QA 이력서면 `QA · 품질보증 · SDET · 테스트 자동화`로, 백엔드면 `백엔드 · 서버 개발 · Backend`로 바뀝니다.
 
-이력서가 없으면 [`role-presets.yml`](skills/jd-search/references/role-presets.yml)에서 직군을 고르면 됩니다. **자기 직군이 없거나 키워드가 부실하면 PR을 보내 주십시오.** 이 파일이 이 저장소에서 가장 커뮤니티에 열려 있는 부분입니다.
+이력서가 없으면 [`role-presets.yml`](skills/jd-search/references/role-presets.yml)에서 직군을 고르면 됩니다. **자기 직군이 없거나 키워드가 부실하면 [PR을 보내 주십시오](CONTRIBUTING.md).** 이 파일이 이 저장소에서 가장 커뮤니티에 열려 있는 부분입니다.
 
 > 한국 잡보드에서 실제로 쓰이는 표기를 넣는 게 중요합니다. `Product Manager`만 넣으면 `프로덕트 매니저` 공고를 통째로 놓칩니다.
 
@@ -125,7 +132,7 @@ export DATA_GO_KR_KEY="공공데이터포털에서 발급받은 키"   # 없으�
 
 | 표본 | 확보율 |
 |---|---|
-| 구직 후보 98개 회사 (2026-08) | **62.2%** |
+| 표본 98개 회사 (2026-08) | **62.2%** |
 | 원티드 수집 30개 회사 — 실제 파이프라인 출력 (2026-08) | **50.0%** |
 
 ```

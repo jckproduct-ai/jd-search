@@ -1,0 +1,26 @@
+name: test
+
+# 🔴 회귀 테스트는 네트워크를 전혀 쓰지 않는다. 그래서 CI 에서 그대로 돌고,
+#    "테스트가 있다"가 아니라 "테스트가 지금 통과한다"를 배지 하나로 증명할 수 있다.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # 의존성 설치 단계가 없다. 표준 라이브러리만 쓴다는 약속이 여기서 검증된다 —
+      # 누군가 npm 패키지를 들여오면 이 워크플로가 먼저 깨진다.
+      - name: 회귀 테스트 (네트워크 0)
+        run: node skills/jd-search/scripts/test/run.mjs
