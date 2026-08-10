@@ -208,5 +208,11 @@ if (!manifest.complete) {
   console.log(`\n⚠ 이번 수집은 완전하지 않습니다 — ${bad.join(', ')}`);
   console.log('  리포트 상단에도 같은 경고가 표시됩니다. 이 결과를 "전수"로 읽지 마십시오.');
 }
-console.log('\n🔴 원티드와 겹치는 공고가 있습니다. 다음으로 병합을 돌려 주십시오:  node scripts/merge_boards.mjs');
+// 🔴 겹침을 **확인하지 않고 있다고 단정하지 않는다.** 다른 보드 공고가 하나도 없으면
+//    겹칠 대상 자체가 없다. 세어 보지 않은 사실을 도구가 말하면 사용자는 나머지 경고도 안 믿는다.
+const others = all.filter(p => p.board && p.board !== 'saramin').length;
+if (others) {
+  console.log(`\n다른 보드 공고 ${others}건이 함께 보관돼 있습니다 — 같은 자리가 겹칠 수 있습니다.`);
+  console.log('  병합:  node scripts/merge_boards.mjs');
+}
 console.log(`→ ${file}`);

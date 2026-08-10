@@ -499,7 +499,7 @@ skills/jd-search/scripts/
   collect_wanted.mjs · collect_saramin.mjs · merge_boards.mjs · gate.mjs · check_alive.mjs
   finance.mjs · resolve_company.mjs · render.mjs · serve.mjs · add_posting.mjs
   templates/report.html   🔴 정적 리포트와 serve 가 **같은 파일**을 쓴다 (serve 는 편집 계층만 얹는다)
-  test/run.mjs            회귀 테스트 317건 (네트워크 없이 돈다)
+  test/run.mjs            회귀 테스트 320건 (네트워크 없이 돈다)
   test/integration.mjs    단계 간 계약 — 임시 홈에서 merge·gate·render·serve 를 실제로 돌린다
 
 ~/.jd-search/<프로필ID>/

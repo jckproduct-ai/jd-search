@@ -97,6 +97,15 @@ group('회사명 변형', () => {
   ok(v2.includes('Miso'), '  괄호 안 영문 별칭은 변형으로 인정', JSON.stringify(v2));
   ok(v2.includes('미소'), '  괄호를 뗀 이름도 포함', JSON.stringify(v2));
 
+  // 🔴 사람인 실측 — 국문·영문을 슬래시로 병기한다. 그 이름의 법인은 어디에도 없다.
+  const v3 = nameVariants('(주)아이클레이브 / iclave');
+  ok(v3.includes('아이클레이브'), '  슬래시 병기: 국문 상호를 후보로 뽑는다', JSON.stringify(v3));
+  ok(v3.includes('iclave'), '  슬래시 병기: 영문 상호도 후보로 뽑는다', JSON.stringify(v3));
+
+  // 이름 안의 슬래시까지 쪼개면 **없는 회사**를 만들어 낸다 — 공백으로 둘러싸인 것만 본다.
+  const v4 = nameVariants('에이/비스토어');
+  ok(!v4.includes('에이'), '  이름 속 슬래시는 쪼개지 않는다', JSON.stringify(v4));
+
   eq(normCorp('주식회사 컬리'), '컬리', '  normCorp: 주식회사 제거');
   eq(normCorp('(주)컬리'), '컬리', '  normCorp: (주) 제거');
   eq(normCorp('㈜ 컬리'), '컬리', '  normCorp: ㈜ 제거');

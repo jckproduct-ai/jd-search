@@ -29,6 +29,14 @@ export function nameVariants(name) {
   add(raw);
   add(bare);
 
+  // 🔴 사람인은 국문·영문 상호를 슬래시로 병기한다("(주)아이클레이브 / iclave").
+  //    괄호 병기는 이미 쪼개면서 슬래시는 안 쪼갰다 — 그 이름의 법인은 **어디에도 없어서**
+  //    모든 후보가 빗나가고 조용히 "미확인"이 된다.
+  //    공백으로 둘러싸인 슬래시만 본다. "A/B스토어" 같은 이름 속 슬래시를 쪼개면 없는 회사를 만든다.
+  if (/\s[/／]\s/.test(bare || raw)) {
+    for (const part of (bare || raw).split(/\s[/／]\s/)) add(part);
+  }
+
   // 괄호 안 별칭 — 법인 형태 표기·"구 ○○"·"주식회사"류는 제외한다.
   for (const m of raw.matchAll(/[(（]([^)）]+)[)）]/g)) {
     const inner = m[1].trim();
