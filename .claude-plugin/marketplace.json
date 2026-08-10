@@ -1,0 +1,17 @@
+{
+  "name": "jd-search",
+  "owner": {
+    "name": "jckproduct-ai",
+    "url": "https://github.com/jckproduct-ai/jd-search"
+  },
+  "metadata": {
+    "description": "한국 채용공고 전수조사 + 회사 재무 판정 에이전트 스킬"
+  },
+  "plugins": [
+    {
+      "name": "jd-search",
+      "source": "./",
+      "description": "이력서 1개와 집주소 1개로 다닐 수 있는 범위 안의 공고를 모아, 각 회사의 재무 위험도를 붙여 리포트 한 장으로 만듭니다. 의존성 0, 필수 키 1개."
+    }
+  ]
+}

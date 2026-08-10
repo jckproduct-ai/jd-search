@@ -28,18 +28,34 @@
 
 ## 설치
 
+**Node 20 이상**이면 됩니다. 그 외에 설치할 것은 없습니다.
+
 ```bash
-# Claude Code
+# Claude Code — 두 줄입니다
 claude plugin marketplace add jckproduct-ai/jd-search
+claude plugin install jd-search@jd-search
 ```
 
-설치 후 그냥 말하면 됩니다.
+설치 후 Claude Code를 다시 켜고 그냥 말하면 됩니다.
 
 ```
 내 조건에 맞는 공고 좀 모아줘
 ```
 
 처음이면 이력서를 달라고 하고, 읽은 내용을 보여드린 뒤 확인을 받고 시작합니다.
+
+<details>
+<summary>다른 에이전트에서 쓰려면 (Codex · Cursor · Gemini CLI)</summary>
+
+플러그인 규격은 Claude Code 것이지만 **내용물은 그냥 Node 스크립트와 마크다운 문서**입니다. 저장소를 받아서 `skills/jd-search/SKILL.md`를 에이전트에게 읽히면 그대로 동작합니다.
+
+```bash
+git clone https://github.com/jckproduct-ai/jd-search.git
+cd jd-search
+node skills/jd-search/scripts/test/run.mjs   # 잘 받아졌는지 확인 (네트워크 불필요)
+```
+
+</details>
 
 ---
 
