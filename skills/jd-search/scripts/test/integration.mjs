@@ -115,6 +115,15 @@ export async function runIntegration(ok, eq) {
     ok(html.includes('titleKeywordMiss') || html.includes('제목'),
       '  수집 단계의 제외 건도 리포트에 실린다');
 
+    // 🔴 기본 정렬은 **좋음 먼저**다 (CEO 결정 2026-08-10). 이 화면에서 사용자가 하려는 일은
+    //    지원할 곳을 고르는 것이라, 위험을 맨 위에 올리면 정작 볼 것이 바닥에 깔린다.
+    //    라벨이 방향을 말해야 한다 — "등급순"으로 되돌아오면 여기서 걸린다.
+    ok(/ORDER\s*=\s*\{\s*g:\s*0/.test(html), '  🔴 기본 정렬은 좋음(g)이 맨 앞이다');
+    ok(html.includes('>좋음 먼저<') && html.includes('>위험 먼저<'),
+      '  정렬 라벨이 방향을 말한다 (좋음 먼저 / 위험 먼저)');
+    ok(!html.includes('>등급순<'), '  방향을 말하지 않는 "등급순" 라벨은 쓰지 않는다');
+    ok(/ORDER\s*=\s*\{[^}]*u:\s*4/.test(html), '  미확인은 맨 뒤다 — 좋은 것도 나쁜 것도 아니다');
+
     run(home, 'render.mjs', ['--with-status']);
     ok(fs.readFileSync(path.join(dir, 'out', 'report.html'), 'utf8').includes('면접 진행중'),
       '  --with-status 를 주면 지원 이력이 들어간다');

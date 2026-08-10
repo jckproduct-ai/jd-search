@@ -16,7 +16,7 @@ import { nameVariants, normCorp, similarity, matchesAny } from '../lib/text.mjs'
 import { parseSubDocs, parseSearchRows, pickFinancialReport } from '../lib/dart.mjs';
 import { extractFromDoc } from '../lib/dart_table.mjs';
 import { parseRegion, regionVerdict, regionVerdictAny, AMBIGUOUS_DISTRICTS } from '../lib/region.mjs';
-import { parseList, parseDetail, parseBody, splitAreas, parseCareer, jdMarkdown as saraminJd, normalize as saraminNormalize } from '../lib/saramin.mjs';
+import { parseList, parseDetail, parseBody, splitAreas, parseCareer, jdMarkdown as saraminJd, normalize as saraminNormalize, planDetailBudget } from '../lib/saramin.mjs';
 import { parsePostingUrl } from '../lib/board_url.mjs';
 import { isSamePosting, planMerge, pickPrimary, regionKeys, mergeVerdicts, normalizeTitle } from '../lib/merge.mjs';
 import { gradeCompany, compareToBaseline, interviewQuestions } from '../lib/grade.mjs';
@@ -239,6 +239,41 @@ group('지역 판정', () => {
   eq(regionVerdictAny(['서울', '대전 서구'], w).verdict, 'unknown',
     '  다중 근무지: 광역만 적힌 항목이 있으면 판정 불가(=hold)로 남긴다');
   eq(regionVerdictAny([], w).verdict, 'unknown', '  근무지가 아예 없으면 판정 불가');
+});
+
+// ══ 4-a2. 상세 조회 예산 — 첫 실행 전량 · 이후 상한 ═══════════════════════════
+group('상세 조회 예산', () => {
+  const ids = Array.from({ length: 500 }, (_, i) => `p${i}`);
+  const none = () => true;                       // 하나도 안 받아 둔 상태
+
+  const first = planDetailBudget(ids, none, { firstRun: true });
+  eq(first.allowed.size, 500, '  🔴 첫 실행은 전량 받는다 (상한 없음)');
+  eq(first.cutOff, 0, '  첫 실행에는 잘린 건이 없다');
+  ok(first.firstRunFull, '  첫 실행 전량임을 알린다 (안내 문구의 조건)');
+
+  const again = planDetailBudget(ids, none, { firstRun: false });
+  eq(again.allowed.size, 200, '  재실행은 기본 200건까지');
+  eq(again.cutOff, 300, '  잘린 300건을 센다');
+  ok(!again.firstRunFull, '  재실행에서는 전량 안내를 하지 않는다');
+
+  // 🔴 사용자가 적은 값이 최우선이다 — 첫 실행이어도 그대로 따른다.
+  const capped = planDetailBudget(ids, none, { maxFlag: '50', firstRun: true });
+  eq(capped.allowed.size, 50, '  --max 를 적었으면 첫 실행이어도 그 값이 이긴다');
+  eq(capped.cutOff, 450, '  그때도 잘린 건수를 센다');
+  ok(!capped.firstRunFull, '  명시 상한이면 전량 안내를 하지 않는다');
+
+  // 🔴 상한은 **받아야 하는 건수**를 센다. 이미 받아 둔 것까지 세면
+  //    목록 뒤쪽의 새 공고가 영영 안 받아진다 — 조용한 손실이 상한 뒤에 쌓인다.
+  const cachedFirst450 = id => Number(id.slice(1)) >= 450;   // 앞 450건은 이미 보유
+  const smart = planDetailBudget(ids, cachedFirst450, { firstRun: false });
+  eq(smart.allowed.size, 50, '  🔴 이미 받아 둔 건은 상한에서 세지 않는다');
+  eq(smart.cutOff, 0, '  받아야 할 50건이 상한 안에 들어와 잘린 건이 없다');
+  ok(smart.allowed.has('p499'), '  목록 뒤쪽의 새 공고도 상한 안에 들어온다');
+
+  eq(planDetailBudget(ids, none, { maxFlag: '0', firstRun: false }).allowed.size, 0,
+    '  --max 0 은 상세를 하나도 받지 않는다 (목록만 갱신)');
+  eq(planDetailBudget(ids, none, { maxFlag: true, firstRun: true }).allowed.size, 500,
+    '  값 없는 --max 는 무시하고 규칙대로 간다');
 });
 
 // ══ 4-b. 사람인 파싱 (실물 HTML fixture) ════════════════════════════════════

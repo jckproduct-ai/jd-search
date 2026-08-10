@@ -23,7 +23,7 @@
 import fs from 'node:fs';
 import { loadProfile, statePath, readJson, writeJson, requireSourceEnabled } from './lib/io.mjs';
 import { matchesAny } from './lib/text.mjs';
-import { listByQuery, toRecord } from './lib/saramin.mjs';
+import { listByQuery, toRecord, planDetailBudget } from './lib/saramin.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, def = null) => {
@@ -114,34 +114,55 @@ for (const r of manifest.queries) {
 
 // 🔴 공고 하나당 상세·본문 2요청이고 요청 간 1초다. 300건이면 10분이다.
 //    상한을 두되 **잘랐다는 사실을 반드시 남긴다** — 조용히 자르면 사용자는 그게 전부인 줄 안다.
-const MAX_DETAIL = Number(flag('max', 200));
+//    규칙 자체는 `lib/saramin.mjs` 의 `planDetailBudget` 에 있다 (테스트가 물게 하려고 뺐다).
 const allSeen = [...seen.entries()];
-const targets = allSeen.slice(0, MAX_DETAIL);
-const cutOff = allSeen.length - targets.length;
+// 🔴 JD 원문이 없으면 --refresh 없이도 다시 받는다. 공고는 마감되면 사라져 소급이 안 된다.
+//    🔴 조회에 실패한 본문(`failed`)도 다시 받는다. 다만 **이미지형(`imageOnly`)은 다시 받지 않는다** —
+//       다음에 받아도 여전히 이미지다. 매 실행 헛조회만 늘고 기록은 이미 사실대로 남아 있다.
+const needsFetch = id => {
+  const e = store.postings[`saramin:${id}`];
+  if (!e || has('refresh')) return true;
+  return !e.jd || !fs.existsSync(e.jd) || e.jdKind === 'failed';
+};
+const { allowed, cutOff, max: MAX_FETCH, firstRunFull } = planDetailBudget(
+  allSeen.map(([id]) => id), needsFetch,
+  { maxFlag: flag('max', null), firstRun: !Object.values(store.postings).some(p => p.board === 'saramin') },
+);
 if (cutOff > 0) {
   manifest.complete = false;
-  manifest.detailTruncated = { seen: allSeen.length, fetched: targets.length, max: MAX_DETAIL };
+  // 🔴 `seen`(목록에서 본 건수)과 `pending`(못 받은 건수)은 다르다. 이미 받아 둔 것이 섞여 있어서다.
+  //    둘을 뭉치면 "0/292 잘림"처럼 실제보다 크게 잃은 것처럼 보인다 — 경고도 정확해야 믿는다.
+  manifest.detailTruncated = { seen: allSeen.length, fetched: allowed.size, pending: cutOff, max: MAX_FETCH };
 }
 
 console.log(`\n유니크 ${allSeen.length}건 · 제목 무관 제외 약 ${excludedCount}건(사람인 확장검색 잡음)`);
-if (cutOff > 0) console.log(`⚠ 상세 조회는 --max ${MAX_DETAIL} 까지만 합니다 — ${cutOff}건을 이번에 못 받았습니다.`);
+if (cutOff > 0) console.log(`⚠ 상세 조회는 --max ${MAX_FETCH} 까지만 합니다 — ${cutOff}건을 이번에 못 받았습니다.`);
+// 🔴 오래 걸리는 것 자체는 문제가 아니다. **말 없이 오래 걸리는 것**이 문제다.
+if (firstRunFull && allowed.size > 50) {
+  const min = Math.max(1, Math.round(allowed.size * 2 / 60));
+  console.log(`\n🔴 첫 실행이라 ${allowed.size}건을 전부 받습니다 — 약 ${min}분 걸립니다.`);
+  console.log('   공고 하나당 상세·본문 2요청이고, 사람인에 부담을 주지 않으려고 요청 간 1초를 지킵니다.');
+  console.log('   다음 실행부터는 새 공고만 받으므로 훨씬 빠릅니다.');
+  console.log('   지금 줄이려면 중단하고  --max 200  을 붙여 다시 실행해 주십시오 (못 받은 건수는 리포트에 적힙니다).\n');
+}
 
-let added = 0, updated = 0, gone = 0, failed = 0;
-for (const [i, [id, v]] of targets.entries()) {
+let added = 0, updated = 0, gone = 0, failed = 0, done = 0;
+for (const [id, v] of allSeen) {
   const key = `saramin:${id}`;
   const existing = store.postings[key];
-  process.stdout.write(`\r[${i + 1}/${targets.length}] ${String(v.item.company ?? '').slice(0, 16).padEnd(18)}`);
 
-  // 🔴 JD 원문이 없으면 --refresh 없이도 다시 받는다. 공고는 마감되면 사라져 소급이 안 된다.
-  //    🔴 조회에 실패한 본문(`failed`)도 다시 받는다. 다만 **이미지형(`imageOnly`)은 다시 받지 않는다** —
-  //       다음에 받아도 여전히 이미지다. 매 실행 헛조회만 늘고 기록은 이미 사실대로 남아 있다.
-  const jdMissing = !existing?.jd || !fs.existsSync(existing.jd) || existing.jdKind === 'failed';
-  if (existing && !has('refresh') && !jdMissing) {
-    existing.matchedKeywords = [...new Set([...(existing.matchedKeywords ?? []), ...v.matched])];
-    existing.seenRunId = runId;
-    updated++;
+  // 이미 받아 둔 공고 — 네트워크를 쓰지 않으므로 상한에서 세지 않는다.
+  if (!allowed.has(id)) {
+    if (existing) {
+      existing.matchedKeywords = [...new Set([...(existing.matchedKeywords ?? []), ...v.matched])];
+      existing.seenRunId = runId;
+      updated++;
+    }
     continue;
   }
+
+  done++;
+  process.stdout.write(`\r[${done}/${allowed.size}] ${String(v.item.company ?? '').slice(0, 16).padEnd(18)}`);
 
   const r = await toRecord(profile, v.item, v.matched);
   if (r.unknown) { failed++; continue; }

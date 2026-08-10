@@ -112,7 +112,7 @@ w('postings.json', {
     saramin: {
       runId: now, board: 'saramin', complete: false,
       queries: [{ query: '프로덕트 매니저', ok: true, truncated: true, found: 193 }],
-      detailTruncated: { seen: 1035, fetched: 150, max: 150 },
+      detailTruncated: { seen: 1035, fetched: 150, pending: 885, max: 150 },
     },
   },
   lastMerge: { merged: 1, candidates: 2 },

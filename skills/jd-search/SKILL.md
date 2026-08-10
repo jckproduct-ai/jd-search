@@ -136,7 +136,9 @@ description: 한국 채용공고를 여러 잡보드에서 한 번에 모으고,
 
 ```bash
 node scripts/collect_wanted.mjs          # 프로필의 target.roles 로 검색. --query 로 덮어쓸 수 있다
-node scripts/collect_saramin.mjs         # --pages(목록 깊이) · --max(상세 조회 상한, 기본 200)
+node scripts/collect_saramin.mjs         # --pages(목록 깊이) · --max(상세 조회 상한)
+                                         # 🔴 첫 실행은 상한 없이 전량이다(20~35분). 시작 전에 예상 시간을 알린다.
+                                         #    다음 실행부터 기본 200이고, 상한은 **새로 받아야 하는 건수**만 센다.
 node scripts/merge_boards.mjs            # --show 를 주면 아무것도 쓰지 않고 판정만 보여준다
 node scripts/gate.mjs
 node scripts/check_alive.mjs             # --all 이면 마감 건까지 · --board 로 한 보드만
@@ -499,7 +501,7 @@ skills/jd-search/scripts/
   collect_wanted.mjs · collect_saramin.mjs · merge_boards.mjs · gate.mjs · check_alive.mjs
   finance.mjs · resolve_company.mjs · render.mjs · serve.mjs · add_posting.mjs
   templates/report.html   🔴 정적 리포트와 serve 가 **같은 파일**을 쓴다 (serve 는 편집 계층만 얹는다)
-  test/run.mjs            회귀 테스트 320건 (네트워크 없이 돈다)
+  test/run.mjs            회귀 테스트 338건 (네트워크 없이 돈다)
   test/integration.mjs    단계 간 계약 — 임시 홈에서 merge·gate·render·serve 를 실제로 돌린다
 
 ~/.jd-search/<프로필ID>/

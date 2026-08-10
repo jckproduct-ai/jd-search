@@ -95,7 +95,8 @@ details.q li{margin-bottom:4px}
     <select id="region"></select>
     <select id="board"></select>
     <select id="sort">
-      <option value="grade">등급순</option>
+      <option value="grade">좋음 먼저</option>
+      <option value="risk">위험 먼저</option>
       <option value="recent">최신 수집순</option>
       <option value="company">회사명순</option>
       <option value="distance">직선거리순</option>
@@ -116,7 +117,12 @@ details.q li{margin-bottom:4px}
 const D = JSON.parse(document.getElementById('data').textContent);
 const $ = s => document.querySelector(s);
 const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
-const ORDER = { r: 0, w: 1, u: 2, o: 3, g: 4 };
+// 🔴 기본은 **좋음 먼저**다. 사용자가 이 화면에서 하려는 일은 지원할 곳을 고르는 것이다.
+//    위험을 맨 위에 올리면 경고는 잘 보이지만 정작 볼 것이 목록 바닥에 깔린다.
+//    경고를 먼저 보고 싶을 때가 있어 "위험 먼저"를 따로 남겨 뒀다 — 라벨이 방향을 말하게 했다.
+//    미확인은 어느 방향에서도 맨 뒤다. 좋은 것도 나쁜 것도 아니라 **아직 모르는 것**이다.
+const ORDER = { g: 0, o: 1, w: 2, r: 3, u: 4 };
+const ORDER_RISK = { r: 0, w: 1, o: 2, g: 3, u: 4 };
 const state = { grades: new Set(), region: '', board: '', sort: 'grade', q: '', hideClosed: true };
 // 확장 지점 — serve 가 편집 UI를 얹는 곳. 정적 리포트에서는 비어 있다.
 // 🔴 편집 가능한 화면을 따로 만들지 않는다. UI가 두 벌이 되면 한쪽만 고쳐지고 둘이 갈라진다.
@@ -191,6 +197,7 @@ function draw() {
 
   rows.sort((a, b) => {
     if (state.sort === 'grade') return (ORDER[a.grade] - ORDER[b.grade]) || a.company.localeCompare(b.company, 'ko');
+    if (state.sort === 'risk') return (ORDER_RISK[a.grade] - ORDER_RISK[b.grade]) || a.company.localeCompare(b.company, 'ko');
     if (state.sort === 'company') return a.company.localeCompare(b.company, 'ko');
     if (state.sort === 'distance') return (a.straightKm ?? 9e9) - (b.straightKm ?? 9e9);
     return String(b.collectedAt ?? '').localeCompare(String(a.collectedAt ?? ''));

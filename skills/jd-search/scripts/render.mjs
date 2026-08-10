@@ -115,7 +115,13 @@ for (const [board, run] of Object.entries(runs)) {
     incomplete.push(`${BOARD_LABEL[board] ?? board} "${q.query}" — ${q.ok ? `${q.found}건에서 잘림` : '조회 실패'}`);
   }
   const t = run.detailTruncated;
-  if (t) incomplete.push(`${BOARD_LABEL[board] ?? board} — 목록에서 ${t.seen}건을 찾았으나 상세는 ${t.fetched}건까지만 받았습니다 (--max ${t.max})`);
+  // 🔴 "못 받은 건수"를 앞에 놓는다. 사용자가 알아야 하는 것은 받은 양이 아니라 **남은 양**이다.
+  //    pending 이 없는 옛 기록은 seen-fetched 로 대신한다(그때는 캐시분을 구분하지 않았다).
+  if (t) {
+    const pending = t.pending ?? Math.max(0, t.seen - t.fetched);
+    incomplete.push(`${BOARD_LABEL[board] ?? board} — 목록 ${t.seen}건 중 상세를 못 받은 것이 ${pending}건 남았습니다`
+      + ` (이번에 ${t.fetched}건 받음, --max ${t.max})`);
+  }
 }
 // 🔴 아직 한 번도 안 돌린 보드가 있으면 그 사실도 경고다. 안 돌린 보드의 공고는 존재 자체가 안 보인다.
 const enabledBoards = Object.entries(profile.sources ?? {})
