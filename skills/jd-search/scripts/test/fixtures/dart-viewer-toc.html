@@ -1,0 +1,160 @@
+));
+	if ($j(".warning").length) {
+		h = parseInt($j(".viewWrap").css("height")) - $j(".warning").height() - 17;
+		$j("#ifrm").height(h);
+	}
+	
+	initLayerNew('winCorpInfo');
+	
+	//목차생성 및 최초뷰어호출
+	makeToc();
+	
+    //팝업행성
+    makePop();
+    
+	window.focus();
+	try {
+		opener.loadHistoryContents();
+	} catch (e) {
+		;
+	}
+	if (isMobileSize())  hideTocArea()
+	if (isInApp()) $j('#print').hide();
+}
+
+function makeToc() {
+	cnt = 0;
+	var treeData = [];
+	
+	
+		var node1 = {};
+		node1['text'] = "감   사   보   고   서";
+		node1['id'] = "1";
+		node1['rcpNo'] = "20260409002808";
+		node1['dcmNo'] = "11299357";
+		node1['eleId'] = "1";
+		node1['offset'] = "1782";
+		node1['length'] = "2172";
+		node1['dtd'] = "dart4.xsd";
+		node1['tocNo'] =  "1";  //eleId 가 toc 순번하고 동일 하지 않은 문서가 존재함.
+		node1['atocId'] =  "1";  //편집기 목차(nrseo.20240111)
+		 
+		cnt++;
+		
+		
+		
+		
+		
+			
+		
+		
+		treeData.push(node1);
+	
+		var node1 = {};
+		node1['text'] = "독립된 감사인의 감사보고서";
+		node1['id'] = "2";
+		node1['rcpNo'] = "20260409002808";
+		node1['dcmNo'] = "11299357";
+		node1['eleId'] = "2";
+		node1['offset'] = "8271";
+		node1['length'] = "4191";
+		node1['dtd'] = "dart4.xsd";
+		node1['tocNo'] =  "2";  //eleId 가 toc 순번하고 동일 하지 않은 문서가 존재함.
+		node1['atocId'] =  "2";  //편집기 목차(nrseo.20240111)
+		 
+		cnt++;
+		
+		
+		
+		
+		
+		
+		treeData.push(node1);
+	
+		var node1 = {};
+		node1['text'] = "(첨부)재 무 제 표";
+		node1['id'] = "3";
+		node1['rcpNo'] = "20260409002808";
+		node1['dcmNo'] = "11299357";
+		node1['eleId'] = "3";
+		node1['offset'] = "12492";
+		node1['length'] = "178612";
+		node1['dtd'] = "dart4.xsd";
+		node1['tocNo'] =  "3";  //eleId 가 toc 순번하고 동일 하지 않은 문서가 존재함.
+		node1['atocId'] =  "3";  //편집기 목차(nrseo.20240111)
+		 
+		cnt++;
+		
+			node1['children'] = [];
+		
+		
+		
+			var node2 = {};
+			node2['text'] = "재 무 상 태 표";
+			node2['id'] = "4"; 	
+			node2['rcpNo'] = "20260409002808";
+			node2['dcmNo'] = "11299357";
+			node2['eleId'] = "4";
+			node2['offset'] = "16267";
+			node2['length'] = "33837";
+			node2['dtd'] = "dart4.xsd";
+			node2['tocNo'] =  "4";  //eleId 가 toc 순번하고 동일 하지 않은 문서가 존재함.
+			node2['atocId'] =  "4";  //편집기 목차(nrseo.20240111)
+			
+			cnt++;
+			
+			
+			
+			
+			node1['children'].push(node2);
+		
+			var node2 = {};
+			node2['text'] = "손 익 계 산 서";
+			node2['id'] = "5"; 	
+			node2['rcpNo'] = "20260409002808";
+			node2['dcmNo'] = "11299357";
+			node2['eleId'] = "5";
+			node2['offset'] = "50104";
+			node2['length'] = "9511";
+			node2['dtd'] = "dart4.xsd";
+			node2['tocNo'] =  "5";  //eleId 가 toc 순번하고 동일 하지 않은 문서가 존재함.
+			node2['atocId'] =  "5";  //편집기 목차(nrseo.20240111)
+			
+			cnt++;
+			
+			
+			
+			
+			node1['children'].push(node2);
+		
+			var node2 = {};
+			node2['text'] = "자 본 변 동 표";
+			node2['id'] = "6"; 	
+			node2['rcpNo'] = "20260409002808";
+			node2['dcmNo'] = "11299357";
+			node2['eleId'] = "6";
+			node2['offset'] = "59615";
+			node2['length'] = "6230";
+			node2['dtd'] = "dart4.xsd";
+			node2['tocNo'] =  "6";  //eleId 가 toc 순번하고 동일 하지 않은 문서가 존재함.
+			node2['atocId'] =  "6";  //편집기 목차(nrseo.20240111)
+			
+			cnt++;
+			
+			
+			
+			
+			node1['children'].push(node2);
+		
+			var node2 = {};
+			node2['text'] = "현 금 흐 름 표";
+			node2['id'] = "7"; 	
+			node2['rcpNo'] = "20260409002808";
+			node2['dcmNo'] = "11299357";
+			node2['eleId'] = "7";
+			node2['offset'] = "65845";
+			node2['length'] = "31535";
+			node2['dtd'] = "dart4.xsd";
+			node2['tocNo'] =  "7";  //eleId 가 toc 순번하고 동일 하지 않은 문서가 존재함.
+			node2['atocId'] =  "7";  //편집기 목차(nrseo.20240111)
+			

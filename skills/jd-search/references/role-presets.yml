@@ -1,0 +1,95 @@
+# 직군 프리셋 — 이력서가 없어도 바로 시작할 수 있게 한다.
+#
+# 🔴 이 파일이 이 저장소에서 가장 커뮤니티에 열려 있는 부분이다.
+#    자기 직군이 없거나 키워드가 부실하면 PR로 보태 주십시오.
+#    한국 잡보드에서 실제로 쓰이는 표기를 넣는 것이 중요하다 —
+#    "Product Manager"만 넣으면 "프로덕트 매니저" 공고를 통째로 놓친다.
+#
+# roles       포함 키워드 (OR). 공고 제목·직무에 하나라도 걸리면 수집
+# exclude     제외 키워드 (AND NOT). 키워드가 겹쳐 딸려 오는 직무를 자른다
+# note        이 직군에서 특히 오탐이 잘 나는 지점
+
+product-manager:
+  label: 서비스기획 · PM · PO
+  roles: [서비스기획, 서비스 기획, 프로덕트 매니저, 프로덕트매니저, PM, PO, Product Owner, Product Manager, 프로덕트 오너, 기획자]
+  exclude: [사업개발, 전략기획, 경영기획, 사업기획, 광고기획, 영업기획, Chief of Staff]
+  note: "'기획자'는 광고·영업·사업 기획까지 다 걸린다. exclude를 반드시 함께 쓸 것."
+
+qa:
+  label: QA · 품질보증
+  roles: [QA, 품질보증, 품질관리, 테스트 엔지니어, 테스트엔지니어, SDET, QA Engineer, 테스트 자동화, Test Engineer, 소프트웨어 검증]
+  exclude: [생산관리, 품질경영, 제조, 하드웨어]
+  note: "제조업 '품질관리'가 대량으로 딸려 온다. exclude 없이 쓰면 절반이 공장 공고다."
+
+backend:
+  label: 백엔드
+  roles: [백엔드, 서버 개발, 서버개발, Backend, 백엔드 엔지니어, 백엔드 개발자, Server Engineer]
+  exclude: [게임 서버, 임베디드]
+
+frontend:
+  label: 프론트엔드
+  roles: [프론트엔드, 프론트 엔드, Frontend, 웹 개발, 웹개발자, React 개발, 클라이언트 개발]
+  exclude: [퍼블리셔, 웹디자이너]
+  note: "'웹 개발'은 퍼블리싱 공고를 끌어온다."
+
+data-analyst:
+  label: 데이터 분석 · 데이터 사이언스
+  roles: [데이터 분석, 데이터분석, Data Analyst, 데이터 사이언티스트, Data Scientist, BI, 그로스 분석, 프로덕트 애널리스트]
+  exclude: [데이터 라벨링, 데이터 입력, 영업]
+
+data-engineer:
+  label: 데이터 엔지니어
+  roles: [데이터 엔지니어, Data Engineer, 데이터 플랫폼, ETL, 데이터 파이프라인, MLOps]
+  exclude: [데이터 입력, 데이터 라벨링]
+
+product-designer:
+  label: 프로덕트 디자인 · UX
+  roles: [프로덕트 디자이너, UX 디자이너, UI 디자이너, UXUI, UX/UI, Product Designer, 인터랙션 디자이너]
+  exclude: [그래픽 디자이너, 편집 디자이너, 영상 디자이너, 3D]
+  note: "브랜드·그래픽 디자인 공고가 많이 섞인다."
+
+ux-researcher:
+  label: UX 리서치
+  roles: [UX 리서처, UX Researcher, 사용자 조사, 유저 리서치, User Research]
+  exclude: [시장조사, 마케팅 리서치]
+
+marketer:
+  label: 마케팅 · 그로스
+  roles: [마케터, 퍼포먼스 마케팅, 그로스 마케팅, 브랜드 마케팅, CRM 마케팅, Growth, 디지털 마케팅]
+  exclude: [영업, 텔레마케팅, MD]
+
+devops:
+  label: DevOps · 인프라
+  roles: [DevOps, SRE, 인프라 엔지니어, 클라우드 엔지니어, 플랫폼 엔지니어, 시스템 엔지니어]
+  exclude: [전산실, 헬프데스크, 네트워크 관리]
+
+android:
+  label: Android
+  roles: [Android, 안드로이드, 안드로이드 개발자, Kotlin 개발]
+  exclude: []
+
+ios:
+  label: iOS
+  roles: [iOS, 아이폰 개발, Swift 개발, iOS 개발자]
+  exclude: []
+
+ml-engineer:
+  label: ML · AI 엔지니어
+  roles: [머신러닝, ML Engineer, AI 엔지니어, 딥러닝, LLM 엔지니어, MLOps, 인공지능]
+  exclude: [AI 라벨링, 데이터 라벨링]
+
+security:
+  label: 보안
+  roles: [정보보안, 보안 엔지니어, Security Engineer, 침해대응, 모의해킹, 보안관제]
+  exclude: [경비, 시설보안, 물리보안]
+  note: "'보안'만으로 검색하면 경비·시설관리 공고가 걸린다."
+
+hr:
+  label: 인사 · HR
+  roles: [인사, HR, HRBP, 리크루터, 채용 담당, People, 조직문화]
+  exclude: [노무사, 급여 아웃소싱]
+
+finance-accounting:
+  label: 재무 · 회계
+  roles: [재무, 회계, 자금, 세무, 결산, FP&A, 재경]
+  exclude: [영업관리, 총무]

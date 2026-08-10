@@ -1,0 +1,8 @@
+{
+  "name": "jd-search",
+  "version": "0.1.0",
+  "description": "🇰🇷 한국 채용공고 전수조사 + 회사 재무 판정 에이전트 스킬. 이력서로 검색 조건을 만들고, 살아있는 공고만 모아, 공시 데이터로 자금등급을 붙여 HTML 리포트를 만든다.",
+  "license": "AGPL-3.0",
+  "keywords": ["채용", "구직", "이직", "job-search", "korea", "dart", "공시", "재무"],
+  "skills": ["./skills/jd-search"]
+}

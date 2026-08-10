@@ -1,0 +1,33 @@
+# 🔴 개인정보 — 절대 커밋하지 않는다.
+#
+# 사용자 데이터는 전부 ~/.jd-search/<프로필>/ 아래에 있어서 원래는 저장소 밖이지만,
+# JD_SEARCH_HOME 을 저장소 안으로 잡고 시험하는 경우가 있어 방어적으로 막아 둔다.
+.jd-search/
+profile.yml
+NOTES.local.md
+
+# 🔴 내부 기록 — 공개용은 docs/DEVLOG.md 로 따로 추린다.
+#    여기에는 개인 구직 상황·계정·일정이 섞여 있어 그대로 나가면 되돌릴 수 없다.
+docs/outputs/
+docs/RELEASE_PLAN.md
+
+# 실행 산출물 — 저장소 어디에 생겨도 막는다.
+# 🔴 `docs/` 로 잡으면 저장소 문서(docs/IMPROVEMENTS.md)까지 함께 사라진다. 경로를 좁힌다.
+**/.jd-search/docs/
+**/.jd-search/cache/
+**/.jd-search/state/
+**/.jd-search/out/
+/out/
+/cache/
+/state/
+
+# 이력서 원본
+*.pdf
+*.docx
+*.hwp
+
+.env
+.env.*
+!.env.example
+.DS_Store
+node_modules/
