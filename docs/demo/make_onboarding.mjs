@@ -5,7 +5,11 @@
  * 실행:
  *   node docs/demo/make_onboarding.mjs /tmp/jd-onboarding
  *   → /tmp/jd-onboarding/onboarding-1-keywords.html · -2-location.html · -3-console.html
- *   그 뒤 브라우저나 Playwright로 `.shot` 요소만 찍어 docs/images/ 에 넣는다.
+ *   그 뒤 `docs/demo/shot.mjs` 로 `.shot` 요소만 찍어 docs/images/ 에 넣는다:
+ *     node docs/demo/shot.mjs /tmp/jd-onboarding/<파일>.html .shot docs/images/<이름>.png --width 920
+ *
+ * 🔴 **이 파일의 숫자(회귀 테스트 건수·공고 건수)는 코드가 바뀌면 같이 바뀌어야 한다.**
+ *    본문만 고치고 그림을 안 다시 찍으면 문서가 그림에 대해 거짓말을 한다 (개선 대장 #92 가 그 사고다).
  *
  * 🔴 1·2번은 **대화 재현**이다. 실제로는 각자가 쓰는 에이전트 화면 안에서 진행된다.
  *    대사는 지어낸 것이 아니라 skills/jd-search/SKILL.md "첫 실행 — 프로필 만들기"가
@@ -225,12 +229,16 @@ const SCREENS = [
       ['o', '── 교차 보드 병합'],
       ['o', '── 자금등급'],
       ['o', '── 단계 간 계약 — collect → merge → gate → render · serve'],
+      ['o', '── 점핏 파싱 · 마감 판정'],
+      ['o', '── 인크루트 파싱 · 마감 판정'],
+      ['o', '── 잡코리아 상세 · JSON-LD'],
+      ['o', '── 저장한 HTML → 공고 주소'],
       ['o', '────────────────────────────────────────────────────────────'],
-      ['ok', '✅ 442건 전부 통과'],
+      ['ok', '✅ 562건 전부 통과'],
       ['', ''],
       ['d', '# 수집이 끝나면 리포트 한 장으로 만듭니다.'],
       ['c', '$ node skills/jd-search/scripts/render.mjs'],
-      ['o', '공고 10건 · 회사 10곳 · 자금등급 확보 8/10'],
+      ['o', '공고 11건 · 회사 11곳 · 자금등급 확보 9/11'],
       ['o', '제외 5건은 리포트 하단 펼침에 사유와 함께 실렸습니다.'],
       ['o', '→ ~/.jd-search/demo/out/report.html'],
       ['', ''],
