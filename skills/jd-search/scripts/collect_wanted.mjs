@@ -20,6 +20,7 @@ import { loadProfile, statePath, readJson, writeJson, requireSourceEnabled } fro
 import { matchesAny } from './lib/text.mjs';
 // 🔴 수집·마감재확인이 같은 경로를 쓰도록 원티드 로직은 lib/wanted.mjs 하나로 모아 둔다.
 import { ORIGIN, listByQuery as listRaw, fetchDetail, toRecord } from './lib/wanted.mjs';
+import { diagnose } from './lib/http.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, def = null) => {
@@ -67,9 +68,11 @@ for (const q of queries) {
     if (truncated) manifest.complete = false;
     console.log(`${items.length}건${truncated ? ` ⚠ --max ${MAX} 한도에서 잘림` : ''}`);
   } catch (e) {
-    manifest.queries.push({ query: q, ok: false, error: e.message });
+    // 🔴 실패 종류를 여기서 굳혀 둔다. 나중에 문자열에서 되살리려 하면 문구가 바뀌는 순간 못 읽는다.
+    const d = diagnose(e);
+    manifest.queries.push({ query: q, ok: false, error: d.message, kind: d.kind, status: d.status, label: d.label, hint: d.hint });
     manifest.complete = false;
-    console.log(`✖ 실패 (${e.message})`);
+    console.log(`✖ ${d.label} (${d.message})`);
   }
 }
 
@@ -88,9 +91,10 @@ for (const name of watch) {
     if (truncated) manifest.complete = false;
     console.log(`${hit.length}건`);
   } catch (e) {
-    manifest.queries.push({ query: `watchlist:${name}`, ok: false, error: e.message });
+    const d = diagnose(e);
+    manifest.queries.push({ query: `watchlist:${name}`, ok: false, error: d.message, kind: d.kind, status: d.status, label: d.label, hint: d.hint });
     manifest.complete = false;
-    console.log(`✖ 실패 (${e.message})`);
+    console.log(`✖ ${d.label} (${d.message})`);
   }
 }
 
@@ -183,7 +187,12 @@ console.log(`\n신규 ${added} · 갱신 ${updated} · 내려감 ${gone} · 실�
 console.log(`보관 ${before} → ${all.length}건 (살아있음 ${all.filter(p => p.status === 'active' && !p.stale).length})`);
 if (!manifest.complete) {
   const bad = manifest.queries.filter(q => !q.ok || q.truncated);
-  console.log(`\n⚠ 이번 수집은 완전하지 않습니다 — ${bad.map(q => `${q.query}(${q.ok ? '잘림' : '실패'})`).join(', ')}`);
+  console.log(`\n⚠ 이번 수집은 완전하지 않습니다 — ${bad.map(q => (q.ok ? `${q.query}(잘림)` : `${q.query} — ${q.label ?? '실패'}`)).join(', ')}`);
   console.log('  리포트 상단에도 같은 경고가 표시됩니다. 이 결과를 "전수"로 읽지 마십시오.');
+  // 🔴 무엇이 잘못됐는지만 말하고 끝내지 않는다. 사용자가 **다음에 할 일**을 적는다 —
+  //    "추천 0건"만 받은 사용자는 도구가 고장 났다고 판단하고 다시 열지 않는다.
+  for (const h of [...new Set(manifest.queries.filter(q => !q.ok && q.hint).map(q => q.hint))]) {
+    console.log(`\n  → ${h}`);
+  }
 }
 console.log(`→ ${file}`);

@@ -15,6 +15,12 @@
  *      ↓ 없으면
  *   u 미확인 + 면접 질문
  *
+ * 투자 정보 (2026-08-18 CEO 요청)
+ *   같은 DART 공시 목록에서 **조달 사건**(유상증자·전환사채·증권신고서)을 함께 뽑는다.
+ *   🔴 목록은 재무를 찾느라 이미 받은 것이라 요청이 늘지 않는다. 단, 공공데이터포털만으로
+ *      재무가 끝난 회사는 원래 DART를 아예 안 봤다 — 그런 회사도 투자 공시를 보려면
+ *      DART 조회가 필요해서, 그때만 조회를 한 번 더 한다 (회사당 2요청 · 끄려면 finance.investment: false).
+ *
  * 🔴 부분일치로 회사 재무를 붙이지 않는다. 후보가 여럿이면 ambiguous로 남기고 사람에게 묻는다.
  *    실측에서 부분일치 구제가 5건을 틀렸고, 그중 2건은 서로 다른 회사가 같은 법인에 붙었다.
  */
@@ -22,6 +28,8 @@ import { loadProfile, statePath, cachePath, readJson, writeJson, jsonCache } fro
 import { resolveCorpByName, fetchFinance, PubDataAuthError } from './lib/pubdata.mjs';
 import { resolveDartCorp, fetchDartFinance } from './lib/dart.mjs';
 import { gradeCompany, compareToBaseline, interviewQuestions, GRADE_LABEL } from './lib/grade.mjs';
+import { investmentEvents, summarizeInvestment, investmentLine } from './lib/investment.mjs';
+import { isCacheFresh } from './lib/freshness.mjs';
 import { ambiguityPrompt } from './lib/match.mjs';
 import { normCorp } from './lib/text.mjs';
 
@@ -34,6 +42,8 @@ if (profile.finance?.enabled === false) {
   process.exit(0);
 }
 const hasKey = Boolean(process.env.DATA_GO_KR_KEY);
+// 🔴 기본값은 켬. 끄면 조달 공시를 아예 보지 않는다 (요청은 줄고, 등급은 재무제표만으로 매겨진다).
+const wantInvestment = profile.finance?.investment !== false;
 if (!hasKey) {
   console.log('⚠ 공공데이터포털 인증키가 없습니다 — DART 공시만으로 진행합니다.');
   console.log('  키를 넣으면 확보율이 올라갑니다:  export DATA_GO_KR_KEY="발급받은키"\n');
@@ -71,35 +81,10 @@ const staleYears = profile.finance?.staleYears ?? 3;
 //    (`node resolve_company.mjs` 가 여기에 쓴다)
 const userChoices = readJson(statePath(profile, 'company_choices.json'), { choices: {} }).choices ?? {};
 
-/**
- * 지금 시점에 "나와 있어야 할" 최신 회계연도.
- * 한국은 12월 결산이 대다수이고 감사보고서·사업보고서가 이듬해 3~4월에 나온다.
- * → 5월이 지나면 전년도 재무가 있어야 정상이고, 그 전이면 전전년도까지가 정상이다.
- */
-function expectedFiscalYear(now = new Date()) {
-  const y = now.getFullYear();
-  return now.getMonth() + 1 >= 5 ? y - 1 : y - 2;
-}
-
-/**
- * 🔴 성공한 조회라도 **무기한 캐시하면 안 된다.**
- *    2024년 재무를 한 번 받아 두면, 2025년 감사보고서가 올라와도 평상시 실행은 조회하지 않아
- *    등급이 옛날 값에 영영 묶인다. 날짜 TTL은 공시 주기와 무관해 헛조회 또는 낡은 값을 만든다
- *    → **회계연도 기준으로 재검증한다.**
- *    실패도 영구 캐시하지 않는다 — 오늘 미등록이던 회사가 다음 달 감사보고서를 낸다.
- */
-function isCacheFresh(hit) {
-  if (!hit) return false;
-  const probedRecently = hit.probedAt && Date.now() - Date.parse(hit.probedAt) < 7 * 864e5;
-  if (!hit.source) return Boolean(probedRecently);          // 실패 → 7일 뒤 재조회
-  const newest = Math.max(0, ...Object.keys(hit.byYear ?? {}).map(Number));
-  if (newest >= expectedFiscalYear()) return true;          // 최신 회계연도까지 확보됨
-  return Boolean(probedRecently);                           // 낡았다 → 재조회하되 7일에 한 번만
-}
-
 /** 한 회사의 재무를 폴백 체인으로 확보한다. */
 async function lookup({ name, region }) {
-  const out = { name, source: null, corp: null, byYear: {}, note: null, ambiguous: null };
+  const out = { name, source: null, corp: null, byYear: {}, note: null, ambiguous: null, investment: null };
+  let financeDone = false;   // 재무는 이미 확보 — DART 는 조달 공시를 보려고만 본다
 
   const choice = userChoices[normCorp(name)];
   if (choice?.skip) {
@@ -126,7 +111,12 @@ async function lookup({ name, region }) {
           out.source = 'data.go.kr';
           // 🔴 낡은 자료를 확보로 치고 끝내면 안 된다. 공공데이터포털에 2023년치만 남아 있어도
           //    DART에는 올해 감사보고서가 올라와 있는 경우가 흔하다 — 여기서 멈추면 그걸 통째로 놓친다.
-          if (newest >= new Date().getFullYear() - 2) return out;
+          // 🔴 재무는 여기서 끝났다. 그래도 **조달 공시를 보려면 DART를 봐야 한다** —
+          //    옛 코드는 여기서 바로 돌아가서, 공공데이터포털로 해결된 회사는 투자 정보가 통째로 비었다.
+          if (newest >= new Date().getFullYear() - 2) {
+            if (!wantInvestment) return out;
+            financeDone = true;
+          }
           out.staleFrom = newest;   // 최종 사유는 DART 결과를 보고 정한다
         } else {
           out.note = '법인은 확인됐으나 공공데이터포털 재무 DB에 수록되지 않음';
@@ -146,6 +136,12 @@ async function lookup({ name, region }) {
     } else if (d.status === 'exact') {
       out.dart = d.corp;
       out.corp ??= d.corp;
+      // 🔴 조달 공시는 **재무 확보 여부와 무관하게** 뽑는다. 재무가 없어도 조달 사실은 사실이다.
+      if (wantInvestment) {
+        const ev = investmentEvents(d.reports);
+        out.investment = ev.length ? summarizeInvestment(ev) : null;
+      }
+      if (financeDone) return out;
       const f = await fetchDartFinance(d.reports);
       if (f?.ok) {
         // 공공데이터포털에서 받은 과거 연도가 있으면 지우지 않고 합친다 — 연속 적자 판정에 쓰인다.
@@ -186,25 +182,28 @@ for (const [i, c] of list.entries()) {
   let r;
   try {
     const hit = cache.get(key);
-    r = (!argv.includes('--fresh') && isCacheFresh(hit))
+    r = (!argv.includes('--fresh') && isCacheFresh(hit, { wantInvestment }))
       ? hit
       : cache.set(key, { ...(await lookup(c)), probedAt: new Date().toISOString() });
   } catch (e) {
     if (e instanceof PubDataAuthError) { console.log('\n\n' + e.message); process.exit(1); }
     r = { name: c.name, source: null, byYear: {}, note: `조회 실패: ${e.message}` };
   }
-  const g = gradeCompany(r.byYear, { staleYears });
+  const g = gradeCompany(r.byYear, { staleYears, investment: r.investment ?? null });
   results[key] = {
     ...r,
     postings: c.postings,
     grade: g.grade, gradeYear: g.year, gradeLabel: GRADE_LABEL[g.grade],
     reasons: g.reasons, stale: g.stale,
+    // 🔴 등급이 투자 때문에 움직였으면 **움직이기 전 등급도 남긴다.** 근거 없이 바뀐 것처럼 보이면 안 된다.
+    investment: g.investment ?? null, gradeBeforeInvestment: g.gradeBeforeInvestment ?? null,
     // 🔴 미확인도 근거다 — "공시가 없다"는 사실 자체가 물어볼 거리다.
     questions: profile.finance?.interviewQuestions === false ? [] : interviewQuestions(g, r.note),
   };
   const 억 = v => (v == null ? '—' : `${(v / 1e8).toFixed(0)}억`);
   const y = g.year ? r.byYear[g.year] : null;
-  console.log(`${GRADE_LABEL[g.grade]}${g.year ? ` ${g.year}` : ''}  ${y ? `매출 ${억(y.revenue)} 영업익 ${억(y.operatingProfit)} 자본 ${억(y.equity)}` : (r.note ?? '')}`.slice(0, 90));
+  const invTail = g.investment?.latest ? `  · 조달 ${g.investment.latest.date} ${g.investment.latest.label}` : '';
+  console.log(`${GRADE_LABEL[g.grade]}${g.year ? ` ${g.year}` : ''}  ${y ? `매출 ${억(y.revenue)} 영업익 ${억(y.operatingProfit)} 자본 ${억(y.equity)}` : (r.note ?? '')}${invTail}`.slice(0, 120));
   cache.flush();
 }
 

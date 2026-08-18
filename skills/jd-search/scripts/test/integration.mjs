@@ -256,6 +256,56 @@ export async function runIntegration(ok, eq) {
     fs.rmSync(home, { recursive: true, force: true });
   }
 
+  // ── 9. 수집이 막혀 0건이어도 사용자가 이유를 받는가 ───────────────────────
+  // 🔴 실제 사고다 (2026-08-18 사용자 제보). 사람인 접근이 막힌 사용자에게 남은 것은
+  //    "추천 0건"뿐이었다. gate 가 사유 없이 exit 1 로 끊어 리포트조차 만들어지지 않았다.
+  //    0건은 파이프라인을 멈출 이유가 아니다 — **왜 0건인지 말할 이유**다.
+  {
+    const { home, dir } = makeHome();
+    fs.writeFileSync(path.join(dir, 'state', 'postings.json'), JSON.stringify({
+      updatedAt: new Date(0).toISOString(),
+      postings: {},
+      runs: {
+        saramin: {
+          runId: 'r1', board: 'saramin', complete: false,
+          queries: [{ query: 'PM', ok: false, error: 'HTTP 403 — https://www.saramin.co.kr/zf_user/search/recruit',
+            kind: 'blocked', status: 403, label: '접근 차단(HTTP 403)',
+            hint: '클라우드·회사망·VPN에서 돌리고 있다면 개인 컴퓨터에서 다시 실행해 주십시오.' }],
+        },
+      },
+    }));
+
+    let stopped = false, out = '';
+    try { out = run(home, 'gate.mjs'); } catch (e) { stopped = true; out = String(e.stdout ?? '') + String(e.stderr ?? ''); }
+    ok(!stopped, '  🔴 수집이 막혀 0건이어도 게이트가 파이프라인을 끊지 않는다');
+    ok(out.includes('접근 차단(HTTP 403)'), '  게이트가 0건의 사유를 화면에 적는다', out.slice(0, 200));
+    ok(/개인 컴퓨터에서 다시 실행/.test(out), '  사유만이 아니라 대처를 함께 적는다');
+
+    run(home, 'render.mjs');
+    const html = fs.readFileSync(path.join(dir, 'out', 'report.html'), 'utf8');
+    ok(html.includes('접근 차단(HTTP 403)'), '  🔴 0건 리포트가 차단 사실을 싣는다');
+    ok(/개인 컴퓨터에서 다시 실행/.test(html), '  🔴 리포트가 대처까지 싣는다 — 화면과 콘솔이 같은 문구다');
+    // 🔴 막힌 보드를 "아직 수집하지 않았습니다"로 적으면 사용자는 자기가 안 돌린 줄 알고 같은 실행을 반복한다.
+    const missing = /"missingBoards":\s*\[([^\]]*)\]/.exec(html);
+    ok(missing && !missing[1].includes('사람인'), '  🔴 막힌 보드를 "아직 수집 안 함"으로 적지 않는다', missing?.[1]);
+    ok(missing && missing[1].includes('원티드'), '  정말 안 돌린 보드는 그대로 알린다', missing?.[1]);
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+
+  // ── 10. 수집을 아예 안 돌린 것은 0건과 다르다 ─────────────────────────────
+  // 🔴 "돌렸는데 0건"과 "안 돌려서 0건"을 같게 다루면, 설치 직후 사용자가 빈 리포트를 받고
+  //    자기 시장에 공고가 없다고 읽는다. 이때는 멈추고 collect 를 시켜야 한다.
+  {
+    const { home, dir } = makeHome();
+    fs.writeFileSync(path.join(dir, 'state', 'postings.json'),
+      JSON.stringify({ updatedAt: null, postings: {} }));
+    let stopped = false, msg = '';
+    try { run(home, 'gate.mjs'); } catch (e) { stopped = true; msg = String(e.stderr ?? e.message); }
+    ok(stopped, '  🔴 수집 기록이 아예 없으면 멈춘다');
+    ok(/collect/.test(msg), '  무엇을 먼저 하라고 말한다', msg.slice(0, 160));
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+
   // ── 8. serve 는 토큰 없이 아무것도 주지 않는가 ─────────────────────────────
   // 🔴 이 서버는 이력서·자택주소·지원이력이 있는 디렉터리를 연다. 인증이 뚫리면 그게 전부 샌다.
   {

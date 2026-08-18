@@ -24,6 +24,7 @@ import fs from 'node:fs';
 import { loadProfile, statePath, readJson, writeJson, requireSourceEnabled } from './lib/io.mjs';
 import { matchesAny } from './lib/text.mjs';
 import { listByQuery, toRecord, planDetailBudget } from './lib/saramin.mjs';
+import { diagnose } from './lib/http.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, def = null) => {
@@ -78,9 +79,11 @@ for (const q of queries) {
       : (stoppedBy === 'relevanceFloor' ? ` (${pages}p까지 훑고 관련도 바닥에서 종료)` : ` (${pages}p, 결과 끝)`);
     console.log(`${items.length}건${tail}`);
   } catch (e) {
-    manifest.queries.push({ query: q, ok: false, error: e.message });
+    // 🔴 실패 종류를 여기서 굳혀 둔다. 나중에 문자열에서 되살리려 하면 문구가 바뀌는 순간 못 읽는다.
+    const d = diagnose(e);
+    manifest.queries.push({ query: q, ok: false, error: d.message, kind: d.kind, status: d.status, label: d.label, hint: d.hint });
     manifest.complete = false;
-    console.log(`✖ 실패 (${e.message})`);
+    console.log(`✖ ${d.label} (${d.message})`);
   }
 }
 
@@ -97,9 +100,10 @@ for (const name of watch) {
     manifest.queries.push({ query: `watchlist:${name}`, ok: true, found: hit.length, pages, stoppedBy });
     console.log(`${hit.length}건`);
   } catch (e) {
-    manifest.queries.push({ query: `watchlist:${name}`, ok: false, error: e.message });
+    const d = diagnose(e);
+    manifest.queries.push({ query: `watchlist:${name}`, ok: false, error: d.message, kind: d.kind, status: d.status, label: d.label, hint: d.hint });
     manifest.complete = false;
-    console.log(`✖ 실패 (${e.message})`);
+    console.log(`✖ ${d.label} (${d.message})`);
   }
 }
 
@@ -224,10 +228,15 @@ if (!roles.length) {
 }
 if (!manifest.complete) {
   const bad = manifest.queries.filter(q => !q.ok || q.truncated)
-    .map(q => `${q.query}(${q.ok ? '상한에서 잘림' : '실패'})`);
+    .map(q => (q.ok ? `${q.query}(상한에서 잘림)` : `${q.query} — ${q.label ?? '실패'}`));
   if (manifest.detailTruncated) bad.push(`상세 조회 ${manifest.detailTruncated.fetched}/${manifest.detailTruncated.seen}건에서 잘림`);
   console.log(`\n⚠ 이번 수집은 완전하지 않습니다 — ${bad.join(', ')}`);
   console.log('  리포트 상단에도 같은 경고가 표시됩니다. 이 결과를 "전수"로 읽지 마십시오.');
+  // 🔴 무엇이 잘못됐는지만 말하고 끝내지 않는다. 사용자가 **다음에 할 일**을 적는다 —
+  //    "추천 0건"만 받은 사용자는 도구가 고장 났다고 판단하고 다시 열지 않는다.
+  for (const h of [...new Set(manifest.queries.filter(q => !q.ok && q.hint).map(q => q.hint))]) {
+    console.log(`\n  → ${h}`);
+  }
 }
 // 🔴 겹침을 **확인하지 않고 있다고 단정하지 않는다.** 다른 보드 공고가 하나도 없으면
 //    겹칠 대상 자체가 없다. 세어 보지 않은 사실을 도구가 말하면 사용자는 나머지 경고도 안 믿는다.

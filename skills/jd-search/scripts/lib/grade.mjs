@@ -2,6 +2,15 @@
 //
 // 🔴 등급은 반드시 **기준연도와 함께** 나간다. 2022년 수치로 2026년 등급을 매긴 사고가 실측에서 4건 있었다.
 // 🔴 자본이 두터운 적자 기업(대규모 조달)을 위험으로 내리면 안 된다. 토스가 자본 1조인데 강등됐었다.
+//
+// 투자 정보 (2026-08-18 CEO 요청):
+//   재무제표는 **작년 이야기**다. 자본잠식으로 찍힌 회사가 올해 유상증자를 받았으면 상황이 다르다.
+//   🔴 다만 등급을 움직이는 것은 **최근 12개월 안의 지분 조달 하나뿐**이다.
+//      · 전환사채는 부채로 들어온 돈이라 자본잠식 판정을 뒤집지 못한다
+//      · 우리는 **금액을 모른다**(공시 제목만 본다). 그래서 올리는 폭은 `위험 → 경고` 한 단계로 묶고,
+//        모른다는 사실을 문구에 그대로 적는다. 나머지 등급은 건드리지 않고 사실만 덧붙인다.
+
+import { investmentLine } from './investment.mjs';
 
 export const GRADE_LABEL = { g: '좋음', o: '양호', w: '경고', r: '위험', u: '미확인' };
 export const GRADE_ORDER = ['r', 'w', 'u', 'o', 'g'];
@@ -10,8 +19,8 @@ const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /**
  * @param {object} byYear  { 2025: {revenue, operatingProfit, equity, liabilities, ...}, 2024: {...} }
- * @param {object} opt     { staleYears=3, now=올해 }
- * @returns {{grade, year, reasons:string[], stale:boolean, series}}
+ * @param {object} opt     { staleYears=3, now=올해, investment=summarizeInvestment() 결과 }
+ * @returns {{grade, year, reasons:string[], stale:boolean, series, investment, gradeBeforeInvestment}}
  */
 export function gradeCompany(byYear, opt = {}) {
   const staleYears = opt.staleYears ?? 3;
@@ -21,7 +30,15 @@ export function gradeCompany(byYear, opt = {}) {
   const series = years.map(y => ({ year: y, ...byYear[y] }))
     .filter(r => num(r.revenue) !== null || num(r.operatingProfit) !== null || num(r.equity) !== null);
 
-  if (!series.length) return { grade: 'u', year: null, stale: false, reasons: ['공시 데이터 없음'], series: [] };
+  const inv = opt.investment ?? null;
+  const invLine = investmentLine(inv);
+
+  // 🔴 재무가 없어도 조달 사실은 사실이다. 등급은 못 매기지만 **적어는 준다** —
+  //    "공시 데이터 없음" 한 줄만 남기면 사용자는 알아볼 것이 아무것도 없다.
+  if (!series.length) {
+    return { grade: 'u', year: null, stale: false, series: [], investment: inv, gradeBeforeInvestment: null,
+      reasons: ['공시 데이터 없음', ...(invLine ? [invLine] : [])] };
+  }
 
   const latest = series[0];
   // 🔴 두 번째로 최신인 자료를 무조건 "직전연도"로 쓰면 안 된다.
@@ -40,8 +57,8 @@ export function gradeCompany(byYear, opt = {}) {
 
   // 🔴 낡은 자료로 등급을 매기지 않는다.
   if (now - latest.year >= staleYears) {
-    return { grade: 'u', year: latest.year, stale: true, series,
-      reasons: [`최신 자료가 ${latest.year}년 — ${staleYears}년 이상 낡아 등급을 매기지 않음`] };
+    return { grade: 'u', year: latest.year, stale: true, series, investment: inv, gradeBeforeInvestment: null,
+      reasons: [`최신 자료가 ${latest.year}년 — ${staleYears}년 이상 낡아 등급을 매기지 않음`, ...(invLine ? [invLine] : [])] };
   }
 
   const equity = num(latest.equity);
@@ -125,7 +142,24 @@ export function gradeCompany(byYear, opt = {}) {
 
   function done(grade) {
     if (gapNote) reasons.push(gapNote);
-    return { grade, year: latest.year, basis: latest.basis ?? null, stale: false, reasons, series, cushioned };
+
+    // 🔴 등급을 움직이는 경우는 이 하나뿐이다 — 위험 판정 + 최근 12개월 안의 **지분** 조달.
+    //    금액을 모르므로 한 단계만 올리고, 모른다는 사실을 같은 줄에 적는다.
+    let final = grade;
+    if (inv?.latest) {
+      if (grade === 'r' && inv.recentEquity) {
+        final = 'w';
+        // 🔴 완화의 근거는 **지분 조달 공시 그 자체**다. 목록의 최신 공시(전환사채일 수 있다)를 쓰면
+        //    "전환사채는 위험을 내리지 못한다"고 적어 놓고 전환사채를 근거로 내미는 꼴이 된다.
+        const src = inv.recentEquityEvent ?? inv.latest;
+        reasons.push(`다만 ${src.date} ${src.label} 공시 — 위험에서 경고로 한 단계 낮췄습니다`
+          + ' (금액은 공시 원문에서 확인해 주십시오)');
+      } else {
+        reasons.push(invLine);
+      }
+    }
+    return { grade: final, year: latest.year, basis: latest.basis ?? null, stale: false, reasons, series, cushioned,
+      investment: inv, gradeBeforeInvestment: final === grade ? null : grade };
   }
 }
 
@@ -175,6 +209,11 @@ export function interviewQuestions({ grade, reasons = [], year }, unknown = null
   if (has(/자본잠식/)) {
     q.push(`${year}년 기준 자본잠식 상태로 공시돼 있습니다. 해소 계획과 현재 진행 상황을 알 수 있겠습니까?`);
     q.push('최근 투자 유치나 유상증자 계획이 있습니까? 확정된 일정이 있습니까?');
+  }
+  // 🔴 조달 사실을 알면 질문이 달라진다. "투자 받았습니까"가 아니라 **얼마를, 어디에 쓰는지**를 묻는다.
+  if (has(/유상증자|사채|증권신고서|소액공모/)) {
+    q.push('최근 조달 공시가 있습니다. 규모와 투자자 구성, 그리고 이 자금으로 무엇을 하려는지 알 수 있겠습니까?');
+    q.push('이번 조달로 확보된 런웨이는 몇 개월입니까?');
   }
   if (has(/영업적자 2년 연속/)) {
     q.push('영업적자가 이어지고 있는데, 흑자 전환 목표 시점과 그 근거가 되는 지표는 무엇입니까?');

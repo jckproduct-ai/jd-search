@@ -20,6 +20,7 @@ import { loadProfile, statePath, readJson, writeJson } from './lib/io.mjs';
 import { regionVerdict, regionVerdictAny, haversine, AMBIGUOUS_DISTRICTS } from './lib/region.mjs';
 import { matchesAny, normCorp } from './lib/text.mjs';
 import { experienceTags } from './lib/experience.mjs';
+import { summarizeRuns, runsOf } from './lib/runstatus.mjs';
 
 const argv = process.argv.slice(2);
 const flag = n => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : null; };
@@ -34,7 +35,32 @@ if (!store) {
   process.exit(1);
 }
 const postings = Object.values(store.postings ?? {});
-if (!postings.length) { console.error('수집된 공고가 없습니다.'); process.exit(1); }
+
+// 🔴 0건일 때 **왜 0건인지 말하지 않고 멈추면** 사용자에게 남는 것은 "추천 0건"뿐이다.
+//    실제로 보드가 차단된 사용자가 이 자리에서 끊겨 리포트조차 못 받았다 (2026-08-18 사용자 제보).
+//    수집이 돌긴 돌았는데 0건이면 **멈추지 않는다** — 빈 결과를 사유와 함께 넘겨
+//    리포트가 "무엇이 막혔고 무엇을 하면 되는지"를 화면에 싣게 한다.
+const runSummary = summarizeRuns(runsOf(store));
+if (!postings.length) {
+  if (!runSummary.everRan) {
+    console.error('수집된 공고가 없고 수집 기록도 없습니다. collect 단계를 먼저 돌려 주십시오.');
+    process.exit(1);
+  }
+  console.log('수집된 공고가 0건입니다 — 이번 실행에서 아래가 막혔습니다.');
+  for (const f of runSummary.failures) console.log(`  ✖ ${f.text}`);
+  for (const t of runSummary.truncations) console.log(`  ⚠ ${t.text}`);
+  if (!runSummary.failures.length && !runSummary.truncations.length) {
+    console.log('  (수집은 정상으로 끝났습니다. 검색 키워드나 지역 조건이 너무 좁을 수 있습니다)');
+  }
+  for (const h of runSummary.hints) console.log(`  → ${h}`);
+  writeJson(statePath(profile, 'gate.json'), {
+    updatedAt: new Date().toISOString(),
+    criteria: { regions: loc.regions ?? [], denyRegions: loc.denyRegions ?? [], remote: loc.remote ?? 'normal', excludeRoles: tgt.excludeRoles ?? [] },
+    tally: {}, verdicts: {},
+  });
+  console.log('\n빈 결과로 다음 단계에 넘깁니다 — 리포트 상단에 같은 사유가 실립니다.');
+  process.exit(0);
+}
 
 const watch = (profile.watchlist ?? []).map(normCorp).filter(Boolean);
 const block = (profile.blocklist ?? []).map(normCorp).filter(Boolean);
@@ -133,3 +159,9 @@ if (!home) console.log('  (자택 좌표 미설정 — 직선거리 표시 없�
 for (const [r, n] of Object.entries(byReason)) console.log(`    drop:${r} ${n}건`);
 // 🔴 제외 건수는 반드시 보인다. 조용히 자르지 않는다.
 console.log(`\n제외 ${all.length}건(수집 단계 ${fromCollect.length} + 게이트 ${dropped.length})의 사유가 state/dropped.json 에 남았습니다.`);
+
+// 🔴 공고가 좀 나왔다고 해서 차단 사실을 덮지 않는다. 한 보드가 통째로 빠진 목록을 전수로 읽게 된다.
+if (runSummary.failures.length) {
+  console.log(`\n⚠ 이번 목록은 완전하지 않습니다 — ${runSummary.failures.map(f => f.text).join(', ')}`);
+  for (const h of runSummary.hints) console.log(`  → ${h}`);
+}

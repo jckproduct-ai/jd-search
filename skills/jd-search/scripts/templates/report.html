@@ -139,12 +139,16 @@ if (D.incomplete?.length) {
   const ul = el('ul'); ul.style.margin = '6px 0 0'; ul.style.paddingLeft = '18px';
   for (const line of D.incomplete) ul.append(el('li', null, line));
   n.append(ul);
+  // 🔴 무엇이 막혔는지만 적고 끝내면 사용자가 할 수 있는 일이 없다. 대처를 같은 상자 안에 적는다.
+  for (const h of D.incompleteHints ?? []) {
+    const p = el('div', null, `→ ${h}`); p.style.margin = '6px 0 0'; n.append(p);
+  }
   $('#warn').append(n);
 }
 // 🔴 켜 놓고 한 번도 안 돌린 보드가 있으면 그 보드의 공고는 **존재 자체가 안 보인다.**
 if (D.missingBoards?.length) {
   const n = el('div', 'note');
-  n.textContent = `${D.missingBoards.join('·')} 는 아직 수집하지 않았습니다 — 그 보드에만 올라온 공고는 이 목록에 없습니다.`;
+  n.textContent = `${D.missingBoards.join('·')}는 아직 수집하지 않았습니다 — 그 보드에만 올라온 공고는 이 목록에 없습니다.`;
   $('#warn').append(n);
 }
 
@@ -256,6 +260,17 @@ function draw() {
 
     if (r.reasons?.length) box.append(el('div', 'why', r.reasons.join(' · ')));
     else if (r.note) box.append(el('div', 'why', r.note));
+    // 🔴 투자는 **근거를 눌러 확인할 수 있게** 싣는다. 금액은 우리가 모르므로 링크가 곧 근거다.
+    if (r.investment) {
+      const iv = el('div', 'why');
+      iv.append(document.createTextNode(`투자 공시 · ${r.investment.line}`));
+      if (r.investment.url) {
+        const a = el('a', null, ' · DART 공시 원문');
+        a.href = r.investment.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        iv.append(a);
+      }
+      box.append(iv);
+    }
     // 사람이 확인해 붙인 법인은 그렇게 적는다 — 자동 판정과 구분되어야 되돌릴 수 있다.
     if (r.confirmedBy) box.append(el('div', 'why', `동명이인 중 "${r.confirmedBy}" 로 확인해 붙인 재무입니다.`));
 

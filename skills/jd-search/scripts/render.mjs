@@ -20,6 +20,8 @@ import { GRADE_LABEL } from './lib/grade.mjs';
 import { normCorp } from './lib/text.mjs';
 import { mergeVerdicts } from './lib/merge.mjs';
 import { EXPERIENCE_TAG_LABEL } from './lib/experience.mjs';
+import { summarizeRuns, runsOf, BOARD_LABEL } from './lib/runstatus.mjs';
+import { investmentLine } from './lib/investment.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -47,7 +49,6 @@ const REASON_LABEL = {
   regionUnknown: '근무지 판정 불가',
   saraminTitleNoise: '사람인 확장검색 잡음',
 };
-const BOARD_LABEL = { wanted: '원티드', saramin: '사람인' };
 const DUE_KIND_LABEL = { always: '상시채용', untilFilled: '채용시 마감' };
 
 const postings = store.postings ?? {};
@@ -89,7 +90,17 @@ for (const [key, p] of Object.entries(postings)) {
     grade: f.grade ?? 'u', gradeLabel: GRADE_LABEL[f.grade ?? 'u'], gradeYear: f.gradeYear ?? null,
     // 🔴 미확인일 때는 "공시 데이터 없음" 대신 **왜 못 찾았는지**를 보여 준다.
     //    DART 미등록인지, 동명이인이라 못 붙인 것인지, 아직 안 돌린 것인지는 서로 다른 상황이다.
-    reasons: (f.grade === 'u' && f.note) ? [] : (f.reasons ?? []),
+    // 🔴 투자 한 줄은 `reasons` 에서 빼고 따로 싣는다 — 같은 문장을 두 번 보여 주지 않고,
+    //    공시 링크를 붙여 **근거를 눌러서 확인**할 수 있게 하려는 것이다.
+    //    단, 등급을 바꾼 문장("위험에서 경고로 낮췄습니다")은 등급의 근거라서 `reasons` 에 그대로 둔다.
+    reasons: ((f.grade === 'u' && f.note) ? [] : (f.reasons ?? []))
+      .filter(x => x !== (f.investment ? investmentLine(f.investment) : null)),
+    investment: f.investment?.latest
+      ? { line: investmentLine(f.investment), url: f.investment.latest.url ?? null,
+          date: f.investment.latest.date, label: f.investment.latest.label, count: f.investment.count }
+      : null,
+    // 🔴 투자 때문에 등급이 움직였으면 움직이기 전 등급도 보여 준다. 근거 없이 바뀐 것처럼 보이면 안 된다.
+    gradeBeforeInvestment: f.gradeBeforeInvestment ?? null,
     questions: f.questions ?? [],
     note: f.ambiguous
       ? `같은 이름의 법인이 여러 곳이라 재무를 붙이지 않았습니다 — 어느 회사인지 확인이 필요합니다`
@@ -106,28 +117,18 @@ const companies = new Set(rows.map(r => normCorp(r.company)));
 
 // 🔴 부분 성공을 부분 성공이라고 표시한다. 조용한 부분 실패가 이 제품에서 가장 나쁜 실패다.
 //    보드마다 실행 기록이 따로 있다 — 하나로 합쳐 보면 한 보드의 경고가 다른 보드에 묻힌다.
-const runs = { ...(store.runs ?? {}), ...(store.lastRun ? { [store.lastRun.board ?? 'wanted']: store.lastRun } : {}) };
-const incomplete = [];
-for (const [board, run] of Object.entries(runs)) {
-  if (!run || run.complete !== false) continue;
-  for (const q of run.queries ?? []) {
-    if (q.ok && !q.truncated) continue;
-    incomplete.push(`${BOARD_LABEL[board] ?? board} "${q.query}" — ${q.ok ? `${q.found}건에서 잘림` : '조회 실패'}`);
-  }
-  const t = run.detailTruncated;
-  // 🔴 "못 받은 건수"를 앞에 놓는다. 사용자가 알아야 하는 것은 받은 양이 아니라 **남은 양**이다.
-  //    pending 이 없는 옛 기록은 seen-fetched 로 대신한다(그때는 캐시분을 구분하지 않았다).
-  if (t) {
-    const pending = t.pending ?? Math.max(0, t.seen - t.fetched);
-    incomplete.push(`${BOARD_LABEL[board] ?? board} — 목록 ${t.seen}건 중 상세를 못 받은 것이 ${pending}건 남았습니다`
-      + ` (이번에 ${t.fetched}건 받음, --max ${t.max})`);
-  }
-}
+//    🔴 실패 문구는 `lib/runstatus.mjs` 하나에서만 만든다. render·serve·gate 가 각자 쓰다
+//       한 곳만 고쳐져 화면마다 다른 말을 하던 자리다.
+const runSummary = summarizeRuns(runsOf(store));
+const incomplete = [...runSummary.failures, ...runSummary.truncations].map(f => f.text);
 // 🔴 아직 한 번도 안 돌린 보드가 있으면 그 사실도 경고다. 안 돌린 보드의 공고는 존재 자체가 안 보인다.
 const enabledBoards = Object.entries(profile.sources ?? {})
   .filter(([b, mode]) => ['wanted', 'saramin'].includes(b) && mode !== 'off').map(([b]) => b);
 const collected = new Set(Object.values(postings).map(p => p.board));
-const missingBoards = enabledBoards.filter(b => !collected.has(b));
+// 🔴 "안 돌린 것"과 "돌렸는데 막힌 것"은 다르다. 막힌 보드에 "아직 수집하지 않았습니다"라고 적으면
+//    사용자는 자기가 안 돌린 줄 알고 같은 실행을 반복한다 — 바로 위에 차단 경고를 띄워 놓고서.
+const ranBoards = new Set(Object.keys(runsOf(store)));
+const missingBoards = enabledBoards.filter(b => !collected.has(b) && !ranBoards.has(b));
 
 const merged = store.lastMerge ?? null;
 const data = {
@@ -148,6 +149,8 @@ const data = {
   dropped: { byReason: dropped.byReason ?? {}, items: dropped.dropped ?? [] },
   ambiguous: Object.values(fin.companies ?? {}).filter(c => c.ambiguous).map(c => c.name),
   incomplete,
+  // 🔴 무엇이 막혔는지만 적고 끝내지 않는다. 사용자가 다음에 할 일을 같은 자리에 적는다.
+  incompleteHints: runSummary.hints,
   missingBoards: missingBoards.map(b => BOARD_LABEL[b] ?? b),
   mergeCandidates: merged?.candidates ?? 0,
   staleCount: rows.filter(r => r.stale).length,

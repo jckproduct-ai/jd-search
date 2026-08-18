@@ -33,6 +33,8 @@ import { EXPERIENCE_TAG_LABEL } from './lib/experience.mjs';
 import { normCorp } from './lib/text.mjs';
 import { mergeVerdicts } from './lib/merge.mjs';
 import { parsePostingUrl } from './lib/board_url.mjs';
+import { summarizeRuns, runsOf, BOARD_LABEL } from './lib/runstatus.mjs';
+import { investmentLine } from './lib/investment.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -45,7 +47,6 @@ const PROFILE_ID = path.basename(profile.dir);
 const TOKEN = crypto.randomBytes(24).toString('base64url');
 const PORT = Number(flag('port') ?? 0);          // 0 = 빈 포트를 OS가 고른다
 
-const BOARD_LABEL = { wanted: '원티드', saramin: '사람인' };
 const DUE_KIND_LABEL = { always: '상시채용', untilFilled: '채용시 마감' };
 const STATUSES = ['', '관심', '지원함', '서류 통과', '면접 진행중', '최종 합격', '불합격', '보류'];
 
@@ -90,7 +91,14 @@ function buildData() {
         ...(p.jdKind === 'imageOnly' ? ['본문 이미지'] : []),
       ],
       grade: f.grade ?? 'u', gradeLabel: GRADE_LABEL[f.grade ?? 'u'], gradeYear: f.gradeYear ?? null,
-      reasons: (f.grade === 'u' && f.note) ? [] : (f.reasons ?? []),
+      // 🔴 리포트와 **같은 규칙**으로 싣는다 (render.mjs 참조). 화면 둘이 갈라지면 안 된다.
+      reasons: ((f.grade === 'u' && f.note) ? [] : (f.reasons ?? []))
+        .filter(x => x !== (f.investment ? investmentLine(f.investment) : null)),
+      investment: f.investment?.latest
+        ? { line: investmentLine(f.investment), url: f.investment.latest.url ?? null,
+            date: f.investment.latest.date, label: f.investment.latest.label, count: f.investment.count }
+        : null,
+      gradeBeforeInvestment: f.gradeBeforeInvestment ?? null,
       questions: f.questions ?? [],
       note: f.ambiguous ? '같은 이름의 법인이 여러 곳이라 재무를 붙이지 않았습니다 — 어느 회사인지 확인이 필요합니다'
         : (f.note ?? (fin.updatedAt ? (f.grade === 'u' ? (f.reasons ?? [])[0] : null) : '재무 단계를 아직 돌리지 않았습니다')),
@@ -104,17 +112,9 @@ function buildData() {
 
   const known = rows.filter(r => r.grade !== 'u');
   const companies = new Set(rows.map(r => normCorp(r.company)));
-  const runs = { ...(store.runs ?? {}), ...(store.lastRun ? { [store.lastRun.board ?? 'wanted']: store.lastRun } : {}) };
-  const incomplete = [];
-  for (const [board, run] of Object.entries(runs)) {
-    if (!run || run.complete !== false) continue;
-    for (const q of run.queries ?? []) {
-      if (q.ok && !q.truncated) continue;
-      incomplete.push(`${BOARD_LABEL[board] ?? board} "${q.query}" — ${q.ok ? `${q.found}건에서 잘림` : '조회 실패'}`);
-    }
-    const t = run.detailTruncated;
-    if (t) incomplete.push(`${BOARD_LABEL[board] ?? board} — 목록에서 ${t.seen}건을 찾았으나 상세는 ${t.fetched}건까지만 받았습니다 (--max ${t.max})`);
-  }
+  // 🔴 리포트와 **같은 문구**를 쓴다. 여기서 따로 만들면 화면마다 다른 말을 하게 된다.
+  const runSummary = summarizeRuns(runsOf(store));
+  const incomplete = [...runSummary.failures, ...runSummary.truncations].map(f => f.text);
   const enabled = Object.entries(profile.sources ?? {})
     .filter(([b, m]) => ['wanted', 'saramin'].includes(b) && m !== 'off').map(([b]) => b);
   const collected = new Set(Object.values(postings).map(p => p.board));
@@ -143,7 +143,10 @@ function buildData() {
     dropped: { byReason: dropped.byReason ?? {}, items: dropped.dropped ?? [] },
     ambiguous: Object.values(fin.companies ?? {}).filter(c => c.ambiguous).map(c => c.name),
     incomplete,
-    missingBoards: enabled.filter(b => !collected.has(b)).map(b => BOARD_LABEL[b] ?? b),
+    incompleteHints: runSummary.hints,
+    // 🔴 막힌 보드를 "아직 수집하지 않았습니다"로 적지 않는다 (render.mjs 와 같은 규칙).
+    missingBoards: enabled.filter(b => !collected.has(b) && !Object.keys(runsOf(store)).includes(b))
+      .map(b => BOARD_LABEL[b] ?? b),
     mergeCandidates: store.lastMerge?.candidates ?? 0,
     staleCount: rows.filter(r => r.stale).length,
     statuses: STATUSES,

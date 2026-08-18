@@ -20,10 +20,13 @@ import { parseList, parseDetail, parseBody, splitAreas, parseCareer, jdMarkdown 
 import { parsePostingUrl } from '../lib/board_url.mjs';
 import { isSamePosting, planMerge, pickPrimary, regionKeys, mergeVerdicts, normalizeTitle } from '../lib/merge.mjs';
 import { gradeCompany, compareToBaseline, interviewQuestions } from '../lib/grade.mjs';
+import { investmentEvents, summarizeInvestment, investmentLine, monthsSince } from '../lib/investment.mjs';
+import { isCacheFresh, expectedFiscalYear } from '../lib/freshness.mjs';
 import { parseYaml } from '../lib/yaml.mjs';
 import { requireSourceEnabled, SOURCE_MODES } from '../lib/io.mjs';
 import { experienceTags, EXPERIENCE_TAG_LABEL } from '../lib/experience.mjs';
-import { mask } from '../lib/http.mjs';
+import { mask, diagnose, kindOfStatus, HttpError, NetworkError } from '../lib/http.mjs';
+import { summarizeRuns, runsOf, kindFromRecord } from '../lib/runstatus.mjs';
 import { runIntegration } from './integration.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -488,6 +491,170 @@ group('교차 보드 병합', () => {
   eq(mergeVerdicts([]), null, '  판정이 없으면 null');
 });
 
+// ══ 4.5 투자 정보 ═══════════════════════════════════════════════════════════
+// 🔴 재무제표는 작년 이야기다. 자본잠식으로 찍힌 회사가 올해 유상증자를 받았으면 상황이 다르다.
+//    그런데 **자금이 들어온 공시와 나간 공시가 이름이 비슷하다.** 무상증자를 투자로 세면
+//    회계 처리를 자금 유입으로 읽고, 자기주식 취득을 세면 **돈이 나간 회사가 받은 회사로 보인다.**
+const REPORTS = [
+  { report: '주요사항보고서(유상증자결정)', date: '2026.06.10', rcpNo: '111' },
+  { report: '주요사항보고서(무상증자결정)', date: '2026.05.02', rcpNo: '112' },
+  { report: '주요사항보고서(자기주식취득신탁계약체결결정)', date: '2026.04.01', rcpNo: '113' },
+  { report: '주식소각결정', date: '2026.03.20', rcpNo: '114' },
+  { report: '타법인주식및출자증권취득결정', date: '2026.03.02', rcpNo: '115' },
+  { report: '주식등의대량보유상황보고서(일반)', date: '2026.02.11', rcpNo: '116' },
+  { report: '주요사항보고서(전환사채권발행결정)', date: '2025.12.05', rcpNo: '117' },
+  { report: '증권신고서(지분증권)', date: '2025.09.09', rcpNo: '118' },
+  { report: '감사보고서제출', date: '2026.03.13', rcpNo: '119' },
+];
+const NOW = new Date(2026, 7, 18);   // 2026-08-18
+
+group('투자 정보 — 자금이 들어온 것만 센다', () => {
+  const ev = investmentEvents(REPORTS, { now: NOW });
+  eq(ev.length, 3, '  조달성 공시 3건만 남는다');
+  eq(ev.map(e => e.kind).join(','), 'paidInCapital,convertibleBond,securitiesEquity', '  최신순으로 정렬된다');
+
+  const kinds = ev.map(e => e.title).join(' | ');
+  ok(!/무상증자/.test(kinds), '  🔴 무상증자는 투자가 아니다 — 자금이 들어오지 않는다');
+  ok(!/자기주식/.test(kinds), '  🔴 자기주식 취득은 자금이 나가는 것이다');
+  ok(!/주식소각/.test(kinds), '  🔴 주식 소각도 자금이 나간다');
+  ok(!/타법인/.test(kinds), '  🔴 타법인 주식 취득은 회사가 남에게 투자한 것이다');
+  ok(!/대량보유/.test(kinds), '  🔴 대량보유 보고는 기존 주주끼리의 매매다');
+  ok(!/감사보고서/.test(kinds), '  정기보고서는 조달이 아니다');
+
+  eq(ev[0].date, '2026-06-10', '  날짜를 YYYY-MM-DD 로 정규화한다');
+  eq(ev[0].url, 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=111', '  공시 원문 링크를 만든다 — 링크가 곧 근거다');
+  eq(ev[0].equity, true, '  유상증자는 지분 조달');
+  eq(ev[1].equity, false, '  🔴 전환사채는 부채로 들어온 돈이다 — 지분 조달이 아니다');
+
+  eq(monthsSince('2026.06.10', NOW), 2, '  개월 수 계산');
+  eq(monthsSince('2025.08.18', NOW), 12, '  1년 전은 12개월');
+  eq(monthsSince('알 수 없음', NOW), null, '  🔴 못 읽으면 0 이 아니라 null 이다');
+
+  const sum = summarizeInvestment(ev);
+  eq(sum.count, 3, '  건수');
+  eq(sum.recentEquity, true, '  최근 12개월 안의 지분 조달이 있다');
+  ok(/금액은 공시 원문에서 확인/.test(investmentLine(sum)), '  🔴 금액을 모른다는 사실을 문구에서 빼지 않는다');
+
+  // 전환사채만 있는 회사 — 부채다. 자본잠식 판정을 뒤집을 근거가 못 된다.
+  const cbOnly = summarizeInvestment(investmentEvents(
+    [{ report: '주요사항보고서(전환사채권발행결정)', date: '2026.07.01', rcpNo: '1' }], { now: NOW }));
+  eq(cbOnly.recentEquity, false, '  🔴 전환사채만으로는 "최근 지분 조달"이 아니다');
+
+  // 오래된 유상증자 — 창 밖이다.
+  const old = summarizeInvestment(investmentEvents(
+    [{ report: '주요사항보고서(유상증자결정)', date: '2025.06.01', rcpNo: '1' }], { now: NOW }));
+  eq(old.recentEquity, false, '  14개월 전 증자는 등급을 움직이지 않는다');
+  ok(old.latest !== null, '  그래도 사실로는 남긴다 — 사라지지 않는다');
+
+  eq(summarizeInvestment([]).latest, null, '  공시가 없으면 없다고 한다');
+});
+
+// ══ 4.6 투자가 등급을 움직이는 유일한 경우 ═══════════════════════════════════
+// 🔴 우리는 **금액을 모른다**(공시 제목만 본다). 그래서 올리는 폭을 한 단계로 묶는다.
+//    금액을 모르는 채로 위험을 양호로 올리면, 5천만 원 증자가 자본잠식을 지운다.
+group('투자 반영 등급', () => {
+  const 억 = n => n * 1e8;
+  const 잠식 = { 2025: { revenue: 억(96), operatingProfit: 억(-58), equity: 억(-12) } };
+  const recentEquity = summarizeInvestment(investmentEvents(
+    [{ report: '주요사항보고서(유상증자결정)', date: '2026.06.10', rcpNo: '9' }], { now: NOW }));
+  const recentCb = summarizeInvestment(investmentEvents(
+    [{ report: '주요사항보고서(전환사채권발행결정)', date: '2026.06.10', rcpNo: '9' }], { now: NOW }));
+
+  eq(gradeCompany(잠식, { now: 2026 }).grade, 'r', '  투자 정보가 없으면 자본잠식은 위험 그대로');
+  const lifted = gradeCompany(잠식, { now: 2026, investment: recentEquity });
+  eq(lifted.grade, 'w', '  🔴 최근 지분 조달이 있으면 위험 → 경고 한 단계만');
+  eq(lifted.gradeBeforeInvestment, 'r', '  움직이기 전 등급을 남긴다 — 근거 없이 바뀐 것처럼 보이면 안 된다');
+  ok(lifted.reasons.some(r => /금액은 공시 원문에서 확인/.test(r)), '  🔴 금액을 모른다고 등급 근거에 적는다');
+  ok(lifted.reasons.some(r => /자본총계.*완전자본잠식/.test(r)), '  자본잠식 사실 자체는 지우지 않는다');
+
+  eq(gradeCompany(잠식, { now: 2026, investment: recentCb }).grade, 'r',
+    '  🔴 전환사채로는 위험이 내려가지 않는다 — 부채로 들어온 돈이다');
+
+  // 두 단계 이상은 절대 오르지 않는다.
+  const 적자연속 = { 2025: { operatingProfit: 억(-14), equity: 억(33), revenue: 억(121) },
+                     2024: { operatingProfit: 억(-9), equity: 억(40), revenue: 억(110) } };
+  const w = gradeCompany(적자연속, { now: 2026, investment: recentEquity });
+  eq(w.grade, 'w', '  🔴 경고는 투자가 있어도 경고다 — 돈이 들어온다고 적자가 흑자가 되지 않는다');
+  eq(w.gradeBeforeInvestment, null, '  등급이 안 움직였으면 그렇게 남긴다');
+  ok(w.reasons.some(r => /유상증자 결정/.test(r)), '  대신 사실은 근거에 실린다');
+
+  // 재무가 아예 없어도 조달 사실은 사실이다.
+  const none = gradeCompany({}, { now: 2026, investment: recentEquity });
+  eq(none.grade, 'u', '  재무가 없으면 등급은 여전히 미확인');
+  ok(none.reasons.some(r => /유상증자 결정/.test(r)), '  🔴 그래도 조달 사실은 적는다 — 미확인이 빈칸이 되지 않게');
+
+  // 면접 질문이 달라진다.
+  const q = interviewQuestions(lifted);
+  ok(q.some(x => /규모와 투자자 구성/.test(x)), '  조달을 알면 "투자 받았습니까"가 아니라 규모·용처를 묻는다');
+});
+
+// ══ 4.7 외부 검증(codex 2026-08-18)에서 걸린 것 ═══════════════════════════════
+// 🔴 전부 **등급이 실제로 틀려지는** 경로였다. 하나하나가 "돈이 안 들어왔는데 들어온 것으로 셈"이다.
+group('투자 정보 — 외부 검증 지적 7건', () => {
+  const ev = t => investmentEvents([{ report: t, date: '2026-06-10', rcpNo: '1' }], { now: NOW });
+
+  // ① 채무 소액공모를 지분으로 세면 회사채 발행이 자본잠식을 지운다.
+  eq(ev('소액공모공시서류(채무증권)')[0].equity, false, '  🔴 채무증권 소액공모는 지분 조달이 아니다');
+  eq(ev('소액공모공시서류(지분증권)')[0].equity, true, '  지분증권 소액공모는 지분 조달');
+  eq(ev('소액공모공시서류')[0].equity, false, '  🔴 종류가 안 적혔으면 지분으로 치지 않는다 — 모를 때는 등급을 안 움직인다');
+  eq(ev('증권신고서(채무증권)')[0].equity, false, '  채무증권 신고서도 부채 조달');
+
+  // ② 되돌린 결정·자회사 조달을 이 회사 돈으로 세면 안 된다.
+  eq(ev('주요사항보고서(유상증자결정철회)').length, 0, '  🔴 철회된 증자는 돈이 들어오지 않았다');
+  eq(ev('유상증자결정 취소').length, 0, '  취소도 마찬가지');
+  eq(ev('유상증자결정(종속회사의 주요경영사항)').length, 0, '  🔴 자회사가 받은 돈은 이 회사 돈이 아니다');
+  eq(ev('[기재정정]주요사항보고서(유상증자결정)').length, 1, '  기재정정은 같은 사건을 다시 낸 것 — 살려 둔다');
+
+  // ③ 완화 근거가 엉뚱한 공시를 가리키면, 문서가 금지한 근거(전환사채)를 내미는 꼴이 된다.
+  const mixed = summarizeInvestment(investmentEvents([
+    { report: '주요사항보고서(전환사채권발행결정)', date: '2026.07.01', rcpNo: 'cb' },
+    { report: '주요사항보고서(유상증자결정)', date: '2026.03.02', rcpNo: 'eq' },
+  ], { now: NOW }));
+  eq(mixed.latest.label, '전환사채 발행 결정', '  목록의 최신은 전환사채');
+  eq(mixed.recentEquity, true, '  최근 12개월 안에 지분 조달이 있다');
+  eq(mixed.recentEquityEvent.label, '유상증자 결정', '  🔴 완화의 근거가 된 공시를 따로 들고 다닌다');
+  const g = gradeCompany({ 2025: { operatingProfit: -58e8, equity: -12e8, revenue: 96e8 } },
+    { now: 2026, investment: mixed });
+  eq(g.grade, 'w', '  지분 조달이 있으므로 위험 → 경고');
+  ok(g.reasons.some(r => /유상증자 결정 공시 — 위험에서 경고로/.test(r)),
+    '  🔴 완화 문구가 유상증자를 가리킨다 — 전환사채를 근거로 내밀지 않는다');
+  ok(!g.reasons.some(r => /전환사채.*위험에서 경고로/.test(r)), '  전환사채가 완화 근거로 적히지 않는다');
+
+  // ⑤ 미래 날짜가 자동으로 "최근"이 되면, 날짜 오독이 곧바로 등급 완화가 된다.
+  const future = summarizeInvestment(investmentEvents(
+    [{ report: '주요사항보고서(유상증자결정)', date: '2027.01.05', rcpNo: '1' }], { now: NOW }));
+  ok(future.months < 0, '  미래 날짜는 음수 개월');
+  eq(future.recentEquity, false, '  🔴 미래 날짜를 "최근 조달"로 세지 않는다');
+  eq(future.recentEquityEvent, null, '  완화 근거도 만들지 않는다');
+});
+
+// ══ 4.8 캐시 재검증 ═════════════════════════════════════════════════════════
+// 🔴 여기서 틀리면 증상이 조용하다. 낡은 값을 신선하다고 하면 등급이 옛날 값에 묶인 채 경고도 안 뜬다.
+group('캐시 재검증', () => {
+  const NOWMS = Date.parse('2026-08-18T00:00:00Z');
+  const day = 864e5;
+  const fresh = { source: 'dart', byYear: { 2025: {} }, investment: null, probedAt: new Date(NOWMS - 2 * day).toISOString() };
+  const old = { source: 'dart', byYear: { 2025: {} }, investment: null, probedAt: new Date(NOWMS - 30 * day).toISOString() };
+
+  eq(expectedFiscalYear(new Date(2026, 7, 1)), 2025, '  5월 이후면 전년도 재무가 있어야 정상');
+  eq(expectedFiscalYear(new Date(2026, 1, 1)), 2024, '  5월 전이면 전전년도까지가 정상');
+
+  eq(isCacheFresh(old, { wantInvestment: false, now: NOWMS }), true, '  투자 정보를 안 보면 최신 회계연도만으로 신선');
+  eq(isCacheFresh(old, { wantInvestment: true, now: NOWMS }), false,
+    '  🔴 투자 정보를 보면 회계연도만으로는 부족하다 — 조달 공시는 주기가 다르다');
+  eq(isCacheFresh(fresh, { wantInvestment: true, now: NOWMS }), true, '  7일 안에 본 것은 다시 안 본다');
+
+  // 기능이 생기기 전에 만들어진 캐시 — 필드 자체가 없다.
+  const legacy = { source: 'dart', byYear: { 2025: {} }, probedAt: new Date(NOWMS - 2 * day).toISOString() };
+  eq(isCacheFresh(legacy, { wantInvestment: true, now: NOWMS }), false,
+    '  🔴 investment 필드가 없는 옛 캐시는 즉시 무효 — 아니면 조달 공시가 영영 안 붙는다');
+  eq(isCacheFresh(legacy, { wantInvestment: false, now: NOWMS }), true, '  기능을 껐으면 옛 캐시도 그대로 쓴다');
+
+  eq(isCacheFresh({ byYear: {}, investment: null, probedAt: new Date(NOWMS - 30 * day).toISOString() },
+    { wantInvestment: true, now: NOWMS }), false, '  실패도 영구 캐시하지 않는다');
+  eq(isCacheFresh(null, { now: NOWMS }), false, '  캐시가 없으면 신선할 리 없다');
+});
+
 // ══ 5. 자금등급 ═════════════════════════════════════════════════════════════
 group('자금등급', () => {
   const Y = new Date().getFullYear();
@@ -641,6 +808,93 @@ group('설정 · 보안', () => {
   ok(!mask('https://api?serviceKey=abcd1234&x=1').includes('abcd1234'), '  serviceKey 마스킹');
   ok(!mask('https://api?apiKey=SECRET').includes('SECRET'), '  apiKey 마스킹');
   ok(mask('https://api?serviceKey=abcd&pageNo=1').includes('pageNo=1'), '  마스킹이 다른 파라미터를 지우지 않는다');
+});
+
+// ══ 6.5 수집 실패 진단 ══════════════════════════════════════════════════════
+// 🔴 실제로 값을 치른 사고다 (2026-08-18 사용자 제보). 사람인 접근이 막힌 사용자가
+//    "추천 0건"만 받고 끝났다 — 도구는 차단 사실을 알고 있었는데 gate 가 사유 없이 멈췄고,
+//    리포트는 "조회 실패" 넉 자로만 적어 사용자가 할 수 있는 일이 없었다.
+//    차단·한도·네트워크는 대처가 서로 다르다. 뭉치면 안 된다.
+group('수집 실패 진단', () => {
+  eq(kindOfStatus(403), 'blocked', '  403 은 차단');
+  eq(kindOfStatus(401), 'blocked', '  401 도 차단');
+  eq(kindOfStatus(451), 'blocked', '  451 도 차단');
+  eq(kindOfStatus(429), 'rateLimited', '  429 는 한도 초과 — 차단과 대처가 다르다');
+  eq(kindOfStatus(404), 'notFound', '  404 는 주소 없음');
+  eq(kindOfStatus(503), 'serverError', '  5xx 는 보드 서버 오류');
+  eq(kindOfStatus(400), 'unknown', '  모르는 4xx 는 아는 척하지 않는다');
+
+  const d403 = diagnose(new HttpError(403, 'https://www.saramin.co.kr/x', '<html>'));
+  eq(d403.kind, 'blocked', '  HttpError 403 → 차단');
+  eq(d403.label, '접근 차단(HTTP 403)', '  라벨에 상태 코드가 남는다');
+  ok(/개인 컴퓨터에서 다시 실행/.test(d403.hint ?? ''), '  🔴 차단은 대처를 함께 준다');
+
+  const net = diagnose(new NetworkError(new TypeError('fetch failed'), 'https://x'));
+  eq(net.kind, 'network', '  fetch 실패는 네트워크 단절');
+  ok(/클라우드 실행 환경/.test(net.hint ?? ''), '  🔴 외부 접속이 막힌 환경을 짚어 준다');
+
+  eq(diagnose(new NetworkError({ name: 'TimeoutError' }, 'https://x')).kind, 'timeout', '  타임아웃은 따로 센다');
+
+  // 🔴 fetch 는 진짜 원인을 cause 안쪽에 숨긴다. 겉면만 보면 전부 `fetch failed` 다 —
+  //    타임아웃을 네트워크 단절로 적으면 "잠시 뒤 재시도" 대신 "인터넷을 확인하라"고 말하게 된다.
+  const nested = new TypeError('fetch failed');
+  nested.cause = Object.assign(new Error('timed out'), { name: 'TimeoutError' });
+  eq(diagnose(new NetworkError(nested, 'https://x')).kind, 'timeout', '  🔴 cause 안쪽의 TimeoutError 도 타임아웃으로 읽는다');
+
+  // 🔴 회사망·클라우드 방화벽은 CONNECT 를 403 으로 되받는다. fetch 는 그저 `fetch failed` 라고만 해서
+  //    겉만 보면 "인터넷 끊김"으로 읽힌다 — 실제로는 **막힌 것**이고 대처가 정반대다.
+  const proxyErr = new TypeError('fetch failed');
+  proxyErr.cause = Object.assign(new Error('Request was cancelled.'), {
+    cause: Object.assign(new Error('Proxy response (403) !== 200 when HTTP Tunneling'), { name: 'AbortError', code: 'UND_ERR_ABORTED' }),
+  });
+  const proxied = diagnose(new NetworkError(proxyErr, 'https://www.saramin.co.kr/'));
+  eq(proxied.kind, 'proxyBlocked', '  🔴 프록시 CONNECT 거부를 네트워크 단절로 뭉개지 않는다');
+  eq(proxied.label, '중간 프록시 차단(HTTP 403)', '  프록시가 준 상태 코드를 살려서 보여 준다');
+  ok(/개인 컴퓨터·개인 네트워크/.test(proxied.hint ?? ''), '  대처는 "연결 확인"이 아니라 "환경 바꾸기"다');
+  ok(!/인터넷 연결을 확인/.test(proxied.hint ?? ''), '  🔴 막힌 사용자에게 인터넷을 확인하라고 하지 않는다');
+  eq(diagnose(new NetworkError({ code: 'ENOTFOUND' }, 'https://x')).kind, 'network', '  DNS 실패도 네트워크');
+  eq(diagnose(new HttpError(500, 'https://x')).kind, 'serverError', '  보드 서버 오류는 사용자 잘못이 아니다');
+
+  // 🔴 인증키는 진단 문구에도 새면 안 된다.
+  ok(!diagnose(new NetworkError(new Error('fail https://a?serviceKey=abcd1234'), 'https://a?serviceKey=abcd1234')).message.includes('abcd1234'),
+    '  진단 메시지도 마스킹을 거친다');
+});
+
+// ══ 6.6 실행 기록 → 사용자 문구 ═════════════════════════════════════════════
+// 🔴 render · serve · gate 가 각자 문구를 만들던 자리다. 한 곳만 고쳐져
+//    콘솔은 "차단", 리포트는 "조회 실패"라고 말하던 것이 이 버그의 절반이었다.
+group('실행 기록 → 사용자 문구', () => {
+  const runs = {
+    saramin: { complete: false, queries: [{ query: '서비스기획', ok: false, error: 'HTTP 403 — https://x', kind: 'blocked', status: 403, label: '접근 차단(HTTP 403)', hint: '개인 컴퓨터에서 다시 실행해 주십시오.' }] },
+    wanted: { complete: false, queries: [{ query: 'PM', ok: true, truncated: true, found: 400 }] },
+  };
+  const r = summarizeRuns(runs);
+  ok(r.everRan, '  기록이 있으면 everRan');
+  ok(r.blocked, '  차단이 하나라도 있으면 blocked');
+  ok(summarizeRuns({ w: { complete: false, queries: [{ query: 'a', ok: false, kind: 'proxyBlocked', status: 403, label: '중간 프록시 차단(HTTP 403)' }] } }).blocked,
+    '  프록시 차단도 차단으로 센다');
+  eq(r.failures.length, 1, '  실패 1건');
+  eq(r.failures[0].text, '사람인 "서비스기획" — 접근 차단(HTTP 403)', '  🔴 보드 이름·키워드·사유가 한 줄에 다 있다');
+  eq(r.truncations[0].text, '원티드 "PM" — 400건에서 잘림', '  잘림은 실패와 구분해 적는다');
+  eq(r.hints.length, 1, '  대처는 중복 없이 한 번만');
+
+  // 옛 기록에는 kind 가 없다. 문자열에서 되살리지 못하면 업데이트 직후 경고가 통째로 뭉개진다.
+  eq(kindFromRecord({ error: 'HTTP 429 — https://x' }).kind, 'rateLimited', '  옛 기록도 상태 코드에서 종류를 되살린다');
+  eq(kindFromRecord({ error: '알 수 없는 오류' }).kind, 'unknown', '  못 읽으면 아는 척하지 않는다');
+  eq(summarizeRuns({ saramin: { complete: false, queries: [{ query: 'a', ok: false, error: 'HTTP 403 — https://x' }] } }).failures[0].label,
+    '접근 차단(HTTP 403)', '  🔴 옛 기록도 새 문구로 표시된다');
+
+  // 🔴 "수집을 아예 안 돌린 것"과 "돌렸는데 0건인 것"은 다르다. gate 의 분기가 여기에 걸려 있다.
+  ok(!summarizeRuns({}).everRan, '  기록이 없으면 everRan 아님 — gate 는 이때만 멈춘다');
+  ok(summarizeRuns({ saramin: { complete: true, queries: [{ query: 'a', ok: true, found: 0 }] } }).everRan,
+    '  정상 종료도 실행 기록이다 — 0건이어도 멈추지 않는다');
+
+  // lastRun 은 보드가 하나뿐이던 시절의 옛 필드다. 못 읽으면 옛 사용자의 경고가 사라진다.
+  const legacy = runsOf({ lastRun: { board: 'wanted', complete: false, queries: [{ query: 'PM', ok: false, error: 'HTTP 403 — https://x' }] } });
+  eq(summarizeRuns(legacy).failures[0].text, '원티드 "PM" — 접근 차단(HTTP 403)', '  lastRun(옛 필드)도 읽는다');
+
+  const det = summarizeRuns({ saramin: { complete: false, queries: [], detailTruncated: { seen: 292, fetched: 200, pending: 92, max: 200 } } });
+  ok(/못 받은 것이 92건/.test(det.truncations[0].text), '  상세 잘림은 남은 건수를 앞에 놓는다');
 });
 
 // ══ 7. 단계 간 계약 (통합) ══════════════════════════════════════════════════

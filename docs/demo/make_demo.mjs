@@ -33,12 +33,32 @@ const rows = [
   { c: '마루소프트',     t: '프로덕트 오너 (B2B SaaS)',      r: '서초구',       b: 'wanted',  grade: 'o', y: 2025, rev: 412,  op: 18,  eq: 260,  af: 4, due: '2026-09-05T23:59:00+09:00', merged: true },
   { c: '별하나테크',     t: 'UX 기획자 — 앱 개편',           r: '마포구',       b: 'saramin', grade: 'o', y: 2024, rev: 88,   op: 6,   eq: 41,   af: 0, due: null, dueKind: 'untilFilled', jdKind: 'imageOnly' },
   { c: '노을커머스',     t: '서비스 기획 (신규 서비스)',      r: '강남구',       b: 'wanted',  grade: 'w', y: 2025, rev: 634,  op: -71, eq: 190,  af: 7, due: '2026-08-22T23:59:00+09:00' },
-  { c: '한결데이터',     t: '프로덕트 매니저 (데이터 플랫폼)', r: '성남시 분당구', b: 'saramin', grade: 'w', y: 2025, rev: 121,  op: -14, eq: 33,   af: 2, due: '2026-08-31T23:59:00+09:00' },
+  { c: '한결데이터',     t: '프로덕트 매니저 (데이터 플랫폼)', r: '성남시 분당구', b: 'saramin', grade: 'w', y: 2025, rev: 121,  op: -14, eq: 33,   af: 2, due: '2026-08-31T23:59:00+09:00', inv: 'bond' },
   { c: '새벽모빌리티',   t: '서비스기획 · 물류 도메인',       r: '서초구',       b: 'saramin', grade: 'r', y: 2025, rev: 96,   op: -58, eq: -12,  af: 5, due: '2026-09-12T23:59:00+09:00' },
   { c: '들녘헬스케어',   t: '프로덕트 오너 (헬스케어)',       r: '마포구',       b: 'saramin', grade: 'u', af: 3, due: '2026-08-27T23:59:00+09:00', note: 'DART 미등록 — 외부감사 대상이 아닌 규모로 보입니다' },
   { c: '푸른창고',       t: '서비스기획자 (풀리모트)',        r: null,           b: 'wanted',  grade: 'u', af: 1, due: null, dueKind: 'always', remote: 'full', ambiguous: true },
   { c: '이레인터랙티브', t: 'Product Manager (Global)',     r: '서초구',       b: 'wanted',  grade: 'g', y: 2025, rev: 2260, op: 311, eq: 1780, af: 8, due: '2026-09-01T23:59:00+09:00' },
+  // 🔴 투자 반영 예시 — 자본잠식(위험)이나 최근 지분 조달이 있어 **한 단계만** 완화된 회사.
+  //    금액을 모른다는 사실이 근거 문장에 그대로 남는다.
+  { c: '숲길바이오',     t: '프로덕트 매니저 (신약 파이프라인)', r: '마포구',    b: 'wanted',  grade: 'w', y: 2025, rev: 42, op: -66, eq: -8, af: 4, due: '2026-09-08T23:59:00+09:00',
+    gradeBefore: 'r', inv: 'equity',
+    reasons: ['자본총계 -8.0억 — 완전자본잠식', '영업손실 66.0억',
+      '다만 2026-06-10 유상증자 결정 공시 — 위험에서 경고로 한 단계 낮췄습니다 (금액은 공시 원문에서 확인해 주십시오)'] },
 ];
+
+// 조달 공시 — 🔴 지분(유상증자)과 부채(전환사채)를 구분해 보여 준다. 전환사채는 등급을 움직이지 않는다.
+const INVESTMENT = {
+  equity: {
+    count: 2, recentEquity: true,
+    latest: { label: '유상증자 결정', date: '2026-06-10', months: 2,
+      url: 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260610000000' },
+  },
+  bond: {
+    count: 1, recentEquity: false,
+    latest: { label: '전환사채 발행 결정', date: '2026-04-02', months: 4,
+      url: 'https://dart.fss.or.kr/dsaf001/main.do?rcpNo=20260402000000' },
+  },
+};
 
 const GRADE_REASON = {
   g: ['영업흑자 2년 연속', '자본총계가 연간 영업손실의 3배 이상'],
@@ -93,11 +113,17 @@ rows.forEach((r, idx) => {
     name: r.c,
     byYear: r.y ? { [r.y]: { revenue: 억(r.rev), operatingProfit: 억(r.op), equity: 억(r.eq), basis: 'separate' } } : {},
     grade: r.grade, gradeYear: r.y ?? null, gradeLabel: GRADE_LABEL[r.grade],
-    reasons: GRADE_REASON[r.grade] ?? [], stale: false,
+    reasons: r.reasons ?? GRADE_REASON[r.grade] ?? [], stale: false,
+    // 🔴 조달 사실과 "움직이기 전 등급"을 함께 남긴다 — 등급이 근거 없이 바뀐 것처럼 보이면 안 된다.
+    investment: r.inv ? INVESTMENT[r.inv] : null,
+    gradeBeforeInvestment: r.gradeBefore ?? null,
     source: r.y ? (i % 2 ? 'DART 감사보고서' : '공공데이터포털 기업재무') : null,
     note: r.note ?? null,
     ...(r.ambiguous ? { ambiguous: { prompt: `"${r.c}" 와 같은 이름의 법인이 3곳입니다.` } } : {}),
-    questions: (r.grade === 'w' || r.grade === 'r')
+    questions: r.inv
+      ? ['최근 조달 공시가 있습니다. 규모와 투자자 구성, 그리고 이 자금으로 무엇을 하려는지 알 수 있겠습니까?',
+         '이번 조달로 확보된 런웨이는 몇 개월입니까?']
+      : (r.grade === 'w' || r.grade === 'r')
       ? ['최근 적자의 원인이 일회성인지, 구조적인지 여쭤봐도 될까요?', '현재 런웨이와 다음 조달 계획은 어떻게 되는지요?']
       : (r.grade === 'u' ? ['공시 자료를 찾지 못했습니다 — 최근 매출 추이를 여쭤봐도 될까요?'] : []),
     postings: [key],
@@ -120,7 +146,7 @@ w('postings.json', {
 w('gate.json', {
   updatedAt: now,
   criteria: { regions: ['강남구', '서초구', '마포구', '성남시 분당구'] },
-  tally: { pass: 10, hold: 0, drop: 4 },
+  tally: { pass: 11, hold: 0, drop: 4 },
   verdicts,
 });
 w('finance.json', { updatedAt: now, usedPubData: true, baseline: null, companies });
