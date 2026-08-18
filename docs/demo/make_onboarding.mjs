@@ -10,6 +10,9 @@
  *
  * 🔴 **이 파일의 숫자(회귀 테스트 건수·공고 건수)는 코드가 바뀌면 같이 바뀌어야 한다.**
  *    본문만 고치고 그림을 안 다시 찍으면 문서가 그림에 대해 거짓말을 한다 (개선 대장 #92 가 그 사고다).
+ *    🔴 회귀 테스트 건수는 **두 화면(install-2-plugin · onboarding-3-console)에 각각 박혀 있다.**
+ *       한 곳만 고치면 나머지 한 장이 옛 숫자를 들고 남는다 (2026-08-18 에 실제로 그렇게 밟았다).
+ *       고칠 때 `grep -n '건 전부 통과' docs/demo/make_onboarding.mjs` 로 전부 잡을 것.
  *
  * 🔴 1·2번은 **대화 재현**이다. 실제로는 각자가 쓰는 에이전트 화면 안에서 진행된다.
  *    대사는 지어낸 것이 아니라 skills/jd-search/SKILL.md "첫 실행 — 프로필 만들기"가
@@ -88,7 +91,7 @@ const SCREENS = [
       ['d', '# 터미널에서 쓰는 방법도 있습니다 (Codex · Cursor · Gemini CLI 도 같은 방식).'],
       ['c', '$ git clone https://github.com/jckproduct-ai/jd-search.git'],
       ['c', '$ cd jd-search && node skills/jd-search/scripts/test/run.mjs'],
-      ['o', '✅ 442건 전부 통과'],
+      ['o', '✅ 562건 전부 통과'],
     ],
   },
   {
