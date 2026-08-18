@@ -9,9 +9,11 @@ description: 한국 채용공고를 여러 잡보드에서 한 번에 모으고,
 
 수집만 하는 도구는 이미 많다. 이 스킬의 값어치는 **공고에 회사의 재무 사실을 붙이는 것**과 **범위 밖을 애초에 안 보여주는 것**에 있다.
 
-> **지금 실제로 되는 것 (2026-08-10)**: 원티드·사람인 수집 · 교차 보드 중복 병합 · 지역 필터 ·
+> **지금 실제로 되는 것 (2026-08-18)**: 원티드·사람인·점핏·인크루트 수집 · 저장본에서 공고 주소 뽑기 ·
+> 교차 보드 중복 병합 · 지역 필터 ·
 > 마감 재확인 및 재공고 되찾기 · 재무 판정 · 동명이인 확인 · 리포트 · `serve`(상태 변경·추가·숨김).
-> **아직 안 되는 것**: 통근 시간 실측(`commute`) · 잡코리아 등 나머지 보드.
+> **아직 안 되는 것**: 통근 시간 실측(`commute`) · 잡코리아·잡플래닛·로켓펀치의 **목록 자동 수집**
+> (셋 다 목록이 JS 로 그려지거나 막혀 있다 — 저장본으로 넣는다) · 링크드인(열지 않는다).
 > 🔴 안 되는 것을 되는 것처럼 말하지 않는다. 리포트에도 같은 문구가 실린다.
 
 > 궁합 점수(S/A/B 티어, "87% 일치")는 만들지 않는다. 검증할 수 없는 숫자다.
@@ -122,6 +124,9 @@ description: 한국 채용공고를 여러 잡보드에서 한 번에 모으고,
 ```
 1 collect    잡보드 → 원시 공고                    scripts/collect_wanted.mjs
                                                   scripts/collect_saramin.mjs
+                                                  scripts/collect_jumpit.mjs
+                                                  scripts/collect_incruit.mjs
+                                                  scripts/collect_saved.mjs   ← 저장한 HTML
 2 merge      보드 간 중복 합치기                    scripts/merge_boards.mjs
 3 gate       지역·제외조건으로 컷                   scripts/gate.mjs
 4 alive      마감 재확인 + 재공고 되찾기            scripts/check_alive.mjs
@@ -137,6 +142,9 @@ description: 한국 채용공고를 여러 잡보드에서 한 번에 모으고,
 ```bash
 node scripts/collect_wanted.mjs          # 프로필의 target.roles 로 검색. --query 로 덮어쓸 수 있다
 node scripts/collect_saramin.mjs         # --pages(목록 깊이) · --max(상세 조회 상한)
+node scripts/collect_jumpit.mjs          # 공개 JSON API. 🔴 공백 든 키워드를 무시한다 — 수집기가 알려 준다
+node scripts/collect_incruit.mjs         # 공개 검색 페이지. 🔴 EUC-KR
+node scripts/collect_saved.mjs --file <저장한.html>   # 목록을 못 받는 보드(잡코리아·잡플래닛·로켓펀치)
                                          # 🔴 첫 실행은 상한 없이 전량이다(20~35분). 시작 전에 예상 시간을 알린다.
                                          #    다음 실행부터 기본 200이고, 상한은 **새로 받아야 하는 건수**만 센다.
 node scripts/merge_boards.mjs            # --show 를 주면 아무것도 쓰지 않고 판정만 보여준다
@@ -214,9 +222,11 @@ node scripts/test/run.mjs                # 회귀 테스트 — 네트워크 없
 
 | 방식 | 대상 | 규칙 |
 |---|---|---|
-| `api` | 공식 API가 있는 보드 (원티드) | 그대로 호출 |
-| `web` | 공식 API가 없어 **공개 검색 페이지 HTML을 읽는** 보드 (사람인) | 요청 간 1초. 로그인·유료 영역은 건드리지 않는다 |
-| `browser` | 위 둘 다 안 되는 보드 | **사용자에게 물어보고 동의하면** 브라우저로 연다 |
+| `api` | 공식 API가 있는 보드 (원티드 · 점핏) | 그대로 호출 |
+| `web` | 공식 API가 없어 **공개 검색 페이지 HTML을 읽는** 보드 (사람인 · 인크루트) | 요청 간 1초. 로그인·유료 영역은 건드리지 않는다 |
+| `saved` | **목록을 도구가 못 받는** 보드 (잡코리아 · 잡플래닛 · 로켓펀치) | 사용자가 브라우저에서 저장한 HTML 에서 **공고 주소만** 뽑고, 상세는 그 보드 파서가 읽는다 |
+| `browser` | 위 셋 다 안 되는 보드 | **사용자에게 물어보고 동의하면** 브라우저로 연다 |
+| `off` | 열지 않는 보드 (링크드인) | 🔴 저장본에 들어 있어도 받지 않는다 |
 | `manual` | 전부 | URL·CSV 붙여넣기 |
 
 🔴 **`api`와 `web`을 같은 이름으로 묶지 않는다.** 사람인은 공식 API가 아니라 공개 페이지 파싱이다.
@@ -556,7 +566,7 @@ skills/jd-search/scripts/
   collect_wanted.mjs · collect_saramin.mjs · merge_boards.mjs · gate.mjs · check_alive.mjs
   finance.mjs · resolve_company.mjs · render.mjs · serve.mjs · add_posting.mjs
   templates/report.html   🔴 정적 리포트와 serve 가 **같은 파일**을 쓴다 (serve 는 편집 계층만 얹는다)
-  test/run.mjs            회귀 테스트 442건 (네트워크 없이 돈다)
+  test/run.mjs            회귀 테스트 562건 (네트워크 없이 돈다)
   test/integration.mjs    단계 간 계약 — 임시 홈에서 merge·gate·render·serve 를 실제로 돌린다
 
 ~/.jd-search/<프로필ID>/

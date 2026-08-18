@@ -2,7 +2,7 @@
 /**
  * 3단계 alive — 살아있는 공고만 남기고, **내려간 자리의 재공고를 되찾는다.**
  *
- * 실행: node check_alive.mjs [--profile <id>] [--all] [--board wanted|saramin]
+ * 실행: node check_alive.mjs [--profile <id>] [--all] [--board wanted|saramin|jumpit|incruit]
  * 출력: state/postings.json 갱신 (+ 재공고로 발견한 신규 공고 · JD 원문)
  *
  * 🔴 **공고 ID 하나만 보면 살아있는 자리를 놓친다.** 실측에서 "마감"으로 잡힌 것 중 6건이
@@ -27,6 +27,9 @@
 import { loadProfile, statePath, readJson, writeJson } from './lib/io.mjs';
 import * as wanted from './lib/wanted.mjs';
 import * as saramin from './lib/saramin.mjs';
+import * as jumpit from './lib/jumpit.mjs';
+import * as incruit from './lib/incruit.mjs';
+import * as jobkorea from './lib/jobkorea.mjs';
 import { similarity, normCorp, matchesAny } from './lib/text.mjs';
 
 const argv = process.argv.slice(2);
@@ -95,6 +98,75 @@ const ADAPTERS = {
       if (r.rec.status === 'closed') return null;
       return r.rec;
     },
+  },
+
+  jumpit: {
+    async check(p) {
+      const d = await jumpit.fetchDetail(p.id);
+      if (d.gone) return { state: 'closed', gone: true };
+      if (d.unknown) return { state: 'unknown', error: d.error };
+      // 🔴 점핏에서 확실한 마감 신호는 `invisible` 하나다. `closedAt` 경과는 근거로 쓰지 않는다 —
+      //    사람인에서 22%가 마감일 없는 상시채용이었던 것과 같은 이유이고, 기간형도 연장이 흔하다.
+      //    내려간 공고는 상세가 400(code C003)으로 와서 위 `gone` 에서 잡힌다.
+      if (d.job?.invisible === true) return { state: 'closed', gone: false };
+      if (!d.job) return { state: 'unknown', error: '상세 응답이 비어 있음' };
+      return { state: 'alive' };
+    },
+    /** 🔴 점핏 목록에는 회사 식별자가 없다. 정규화 상호 **완전일치**로만 좁힌다 (부분일치 금지). */
+    async searchCompany(c) {
+      const { items } = await jumpit.listByQuery(c.name, () => true, { max: 100 });
+      return items
+        .filter(it => normCorp(it.companyName) === normCorp(c.name))
+        .map(it => ({ id: String(it.id), title: jumpit.cleanTitle(it.title), raw: it }));
+    },
+    async record(item, matched) {
+      const d = await jumpit.fetchDetail(item.id);
+      if (!d.job) return null;
+      if (d.job.invisible === true) return null;   // 재검색으로 찾았는데 내려간 것이면 되찾은 게 아니다
+      return jumpit.toRecord(profile, d.job, item.raw, matched);
+    },
+  },
+
+  incruit: {
+    async check(p) {
+      const d = await incruit.fetchDetail(p.id);
+      if (d.gone) return { state: 'closed', gone: true };
+      if (d.unknown) return { state: 'unknown', error: d.error };
+      // 🔴 `dday` 클래스가 `ing` 가 아니면 **마감으로 굳히지 않는다.** 마감 표본을 아직 못 봤다.
+      //    추측으로 공고를 죽이지 않는다 — 사람인에서 신호가 어긋날 때 unknown 으로 두는 것과 같다.
+      if (d.detail.state === 'closed') return { state: 'closed', gone: false };
+      if (d.detail.state === 'active') return { state: 'alive', detail: d.detail };
+      return { state: 'unknown', error: '마감 신호를 읽지 못함' };
+    },
+    /** 인크루트 회사 식별자는 `/company/<번호>`. 없으면 정규화 상호 완전일치로만 좁힌다. */
+    async searchCompany(c) {
+      const { items } = await incruit.listByQuery(c.name, () => true, { maxPages: 2 });
+      return items
+        .filter(it => (c.boardId ? it.companyId === c.boardId : normCorp(it.company) === normCorp(c.name)))
+        .map(it => ({ id: String(it.id), title: it.title, raw: it }));
+    },
+    async record(item, matched) {
+      const r = await incruit.toRecord(profile, item.raw, matched);
+      if (r.gone || r.unknown) return null;
+      if (r.rec.status === 'closed') return null;
+      return r.rec;
+    },
+  },
+
+  jobkorea: {
+    async check(p) {
+      const d = await jobkorea.fetchDetail(p.id);
+      if (d.gone) return { state: 'closed', gone: true };
+      if (d.unknown) return { state: 'unknown', error: d.error };
+      if (d.detail.state === 'closed') return { state: 'closed', gone: false };
+      // 🔴 마감 안내가 없다고 살아있다고 단정하지 않는다 — 마감 응답 표본을 아직 못 봤다.
+      //    `serve` 의 "지금 확인"이 이 값을 그대로 보여 준다: "확인하지 못했습니다".
+      return { state: 'unknown', error: '잡코리아 마감 신호를 아직 검증하지 못했습니다' };
+    },
+    // 🔴 회사 단위 재검색은 **못 한다.** 잡코리아는 목록이 JS 로 그려져 검색 결과를 받을 수 없다.
+    //    빈 배열을 주면 공통 로직이 "되찾은 것 없음"으로 넘어간다 — 없는 기능을 있는 척하지 않는다.
+    async searchCompany() { return []; },
+    async record() { return null; },
   },
 };
 

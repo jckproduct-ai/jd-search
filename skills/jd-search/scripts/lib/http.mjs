@@ -90,8 +90,12 @@ function networkKind(e) {
 
 /**
  * 재시도는 429·5xx·네트워크 오류만. 4xx는 즉시 던진다 (재시도해도 같은 답이 온다).
+ *
+ * 🔴 `charset` — 인크루트처럼 **EUC-KR 로 내려주는 보드**가 있다. `res.text()` 는 UTF-8 로만 읽어서
+ *    회사명·제목이 통째로 깨진 글자가 되고, 그 상태로 저장되면 리포트에도 깨진 채 남는다.
+ *    깨진 글자는 오류를 내지 않아 **아무도 알아채지 못한 채 목록에 실린다** — 그래서 옵션으로 못 박는다.
  */
-export async function request(url, { method = 'GET', headers = {}, body, referer, retries = 2, timeout = 20000 } = {}) {
+export async function request(url, { method = 'GET', headers = {}, body, referer, retries = 2, timeout = 20000, charset = null } = {}) {
   const host = new URL(url).host;
   let lastErr;
   for (let attempt = 0; ; attempt++) {
@@ -103,7 +107,9 @@ export async function request(url, { method = 'GET', headers = {}, body, referer
         body,
         signal: AbortSignal.timeout(timeout),
       });
-      const text = await res.text();
+      const text = charset
+        ? new TextDecoder(charset).decode(new Uint8Array(await res.arrayBuffer()))
+        : await res.text();
       if (res.ok) return text;
       if (res.status !== 429 && res.status < 500) throw new HttpError(res.status, url, text);
       lastErr = new HttpError(res.status, url, text);

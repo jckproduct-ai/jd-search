@@ -18,6 +18,21 @@ import { extractFromDoc } from '../lib/dart_table.mjs';
 import { parseRegion, regionVerdict, regionVerdictAny, AMBIGUOUS_DISTRICTS } from '../lib/region.mjs';
 import { parseList, parseDetail, parseBody, splitAreas, parseCareer, jdMarkdown as saraminJd, normalize as saraminNormalize, planDetailBudget } from '../lib/saramin.mjs';
 import { parsePostingUrl } from '../lib/board_url.mjs';
+import {
+  cleanTitle as jumpitTitle, toIso as jumpitIso, isEntityNotFound, judgeState,
+  placesOf, normalize as jumpitNormalize, jdMarkdown as jumpitJd, postingUrl as jumpitUrl,
+} from '../lib/jumpit.mjs';
+import { planDetailBudget as budgetFromShared } from '../lib/budget.mjs';
+import { extractPostings, baseUrlOf, hasLinkedIn, describeSaved } from '../lib/saved.mjs';
+import { canAdd, ADDABLE_BOARDS } from '../lib/board_adapters.mjs';
+import {
+  parseDetail as jkDetail, parseMetaSummary as jkSummary, findJobPosting,
+  normalize as jkNormalize, parseCareer as jkCareer,
+} from '../lib/jobkorea.mjs';
+import {
+  parseList as icList, parseDetail as icDetail, parseBody as icBody,
+  parseCareer as icCareer, normalize as icNormalize, postingUrl as icUrl,
+} from '../lib/incruit.mjs';
 import { isSamePosting, planMerge, pickPrimary, regionKeys, mergeVerdicts, normalizeTitle } from '../lib/merge.mjs';
 import { gradeCompany, compareToBaseline, interviewQuestions } from '../lib/grade.mjs';
 import { investmentEvents, summarizeInvestment, investmentLine, monthsSince } from '../lib/investment.mjs';
@@ -787,7 +802,12 @@ group('수집 방식 가드', () => {
   throws('API', '  대문자 표기도 통과시키지 않는다');
   throws('', '  빈 문자열도 막는다');
   eq(requireSourceEnabled({}, 'saramin', 'web'), 'web', '  미설정이면 기본값을 쓴다');
-  eq(SOURCE_MODES.join(','), 'api,web,browser,off', '  아는 값은 이 넷뿐이다');
+  eq(SOURCE_MODES.join(','), 'api,web,saved,browser,off', '  아는 값은 이 다섯뿐이다');
+  // 🔴 saved 는 "목록 수집기가 없다"는 뜻이다. 수집기를 부르면 멈추고 저장본 넣는 법을 알려 준다 —
+  //    조용히 0건으로 끝나면 사용자는 그 보드에 공고가 없는 줄 안다.
+  ok((() => { try { requireSourceEnabled({ sources: { jobkorea: 'saved' } }, 'jobkorea'); return false; }
+              catch (e) { return /collect_saved/.test(e.message); } })(),
+    '  🔴 saved 보드는 수집기가 멈추고 저장본 넣는 법을 안내한다');
 });
 
 // ══ 6. 설정·보안 ════════════════════════════════════════════════════════════
@@ -900,6 +920,226 @@ group('실행 기록 → 사용자 문구', () => {
 // ══ 7. 단계 간 계약 (통합) ══════════════════════════════════════════════════
 console.log('\n── 단계 간 계약 — collect → merge → gate → render · serve');
 await runIntegration(ok, eq);
+
+// ══ 점핏(jumpit) — 세 번째 보드 ══════════════════════════════════════════════
+group('점핏 파싱 · 마감 판정', () => {
+  const list = JSON.parse(fx('jumpit-list.json')).result;
+  const detail = JSON.parse(fx('jumpit-detail.json')).result;
+
+  // 🔴 목록 제목에는 검색어가 <span> 으로 감싸여 온다. 그대로 저장하면 태그가 리포트에 실린다.
+  eq(jumpitTitle(list.positions[0].title), 'IT 서비스기획자 경력 채용', '  목록 제목의 하이라이트 태그를 벗긴다');
+  eq(jumpitTitle('<span>PM</span>  ·  <b>PO</b>'), 'PM · PO', '  태그를 벗기고 공백을 정리한다');
+
+  eq(jumpitIso('2026-08-26 23:59:59'), '2026-08-26T23:59:59+09:00'.replace(':59+', ':00+'), '  "YYYY-MM-DD HH:mm:ss" → ISO(+09:00)');
+  eq(jumpitIso('2026-08-26T23:59:59'), '2026-08-26T23:59:00+09:00', '  T 구분자 형식도 읽는다');
+  eq(jumpitIso('상시'), null, '  형식이 다르면 지어내지 않고 null');
+
+  // 🔴 이 저장소에서 제일 위험한 자리 — 없는 공고가 404 가 아니라 400 으로 온다.
+  //    상태 코드만 보고 판정하면 **400 을 전부 마감으로 굳힌다.**
+  ok(isEntityNotFound({ status: 400, body: '{"message":" Entity Not Found","status":400,"code":"C003"}' }),
+    '  400 + code C003 는 없는 공고다');
+  ok(!isEntityNotFound({ status: 400, body: '{"message":"bad request","code":"C001"}' }),
+    '  🔴 code 가 다른 400 을 마감으로 굳히지 않는다');
+  ok(!isEntityNotFound({ status: 400, body: '' }), '  🔴 본문 없는 400 도 마감이 아니다');
+  ok(isEntityNotFound({ status: 404 }), '  404 는 없는 공고다');
+  ok(!isEntityNotFound({ status: 403, body: 'C003' }), '  🔴 차단(403)은 마감이 아니다 — 본문에 C003 이 있어도');
+
+  // 🔴 날짜 경과로 마감 처리하지 않는다 (사람인에서 22%가 마감일 없는 상시채용이었던 것과 같은 이유).
+  eq(judgeState({ closedAt: '2020-01-01 00:00:00' }).state, 'active', '  🔴 마감일이 지났다고 마감으로 굳히지 않는다');
+  eq(judgeState({ invisible: true }).state, 'closed', '  invisible 만이 확실한 마감 신호다');
+  eq(judgeState({ alwaysOpen: true }).dueKind, 'always', '  상시채용은 dueKind=always');
+  eq(judgeState({ closedAt: '2026-12-31 23:59:59' }).dueKind, 'date', '  기간형은 dueKind=date');
+
+  eq(placesOf({ workingPlaces: [{ address: '서울 강남구 삼성로' }], location: '무시됨' })[0], '서울 강남구 삼성로',
+    '  근무지는 workingPlaces 를 먼저 쓴다');
+  eq(placesOf({ workingPlaces: [], location: '서울 마포구' })[0], '서울 마포구', '  workingPlaces 가 비면 location 문자열로 대비한다');
+  eq(placesOf({}).length, 0, '  근무지가 없으면 빈 배열 (지어내지 않는다)');
+
+  const rec = jumpitNormalize(detail, list.positions[0], ['서비스기획']);
+  eq(rec.board, 'jumpit', '  레코드 board');
+  eq(rec.url, jumpitUrl(detail.id), '  레코드 url');
+  eq(rec.company.name, '가온랩스', '  회사명');
+  eq(rec.location.label, '서울', '  근무지 시·도');
+  eq(rec.location.district, '강남구', '  근무지 시·군·구');
+  eq(rec.location.lat, null, '  🔴 좌표를 주지 않는 보드다 — 지어내지 않는다');
+  ok(Array.isArray(rec.location.all) && rec.location.all.length > 0, '  다중 근무지는 all 에 전부 남긴다');
+  eq(rec.annualFrom, 5, '  경력 하한');
+  eq(rec.annualTo, 8, '  경력 상한');
+  eq(rec.status, 'active', '  상태');
+  // 🔴 마감 응답 표본을 아직 확보하지 못했다는 사실을 레코드가 들고 있어야
+  //    check_alive 가 교차 확인 대상으로 삼는다.
+  eq(rec.aliveState, 'unverified', '  🔴 마감 신호 미검증 사실을 레코드에 남긴다');
+  eq(rec.jdKind, 'text', '  본문이 있으면 text');
+  // 🔴 목록은 ["Figma"], 상세는 [{stack:"Figma"}] — 같은 이름의 필드가 모양이 다르다.
+  //    한쪽만 보고 짜면 상세 경로에서 태그가 조용히 빈다.
+  ok(rec.tags.includes('Figma'), '  상세의 기술스택({stack})이 태그에 들어간다');
+  ok(jumpitNormalize({}, list.positions[0]).tags.includes('Figma'), '  목록의 기술스택(문자열)도 태그에 들어간다');
+  ok(rec.tags.includes('개발 PM'), '  직무 카테고리도 태그에 들어간다');
+  ok(rec.matchedKeywords.includes('서비스기획'), '  걸린 키워드를 남긴다');
+  eq(jumpitNormalize({ ...detail, newcomer: true, minCareer: 3 }).annualFrom, 0, '  신입 가능이면 하한은 0');
+
+  // 🔴 본문이 없으면 "없다"고 적는다. 빈 파일을 남기면 수집기가 원문 확보로 세어 다시 받지 않는다.
+  const empty = jumpitJd({ id: 1, title: 'x', companyName: 'y' }, 'https://example.invalid');
+  ok(empty.includes('본문 형태: 없음'), '  본문이 없으면 본문 형태를 없음으로 적는다');
+  ok(empty.includes('공고 원문을 직접 확인'), '  🔴 빈 파일 대신 없다는 사실을 적는다');
+  ok(jumpitJd(detail, 'https://example.invalid').includes('## 자격 요건'), '  본문이 있으면 절을 나눠 싣는다');
+
+  // 🔴 점핏 호스트는 jumpit.saramin.co.kr — 사람인 규칙(`.saramin.co.kr`)에 먼저 걸린다.
+  //    순서가 곧 판정이라 여기서 못 박아 둔다.
+  const j = parsePostingUrl('https://jumpit.saramin.co.kr/position/54581439');
+  eq(j?.board, 'jumpit', '  🔴 점핏 주소가 사람인으로 읽히면 안 된다');
+  eq(j?.id, '54581439', '  점핏 공고 ID');
+  eq(parsePostingUrl('https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=123')?.board, 'saramin',
+    '  사람인 주소는 그대로 사람인이다');
+
+  // 보드가 공유하는 예산 규칙 — saramin.mjs 재수출과 budget.mjs 원본이 같은 함수여야 한다.
+  eq(budgetFromShared, planDetailBudget, '  planDetailBudget 은 보드가 하나를 공유한다');
+});
+
+// ══ 인크루트 — 네 번째 보드 ═════════════════════════════════════════════════
+group('인크루트 파싱 · 마감 판정', () => {
+  const rows = icList(fx('incruit-list.html'));
+  const d = icDetail(fx('incruit-detail.html'));
+
+  eq(rows.length, 3, '  목록 3행');
+  eq(rows[0].id, '2600000000001', '  공고 ID 는 jobno 속성');
+  eq(rows[0].company, '가온랩스 주식회사(GAONLABS)', '  회사명');
+  eq(rows[0].companyId, '1000000001', '  회사 식별자는 /company/<번호>');
+  eq(rows[0].url, icUrl('2600000000001'), '  공고 주소');
+  eq(rows[0].areaLabel, '서울 강남구', '  근무지');
+  eq(rows[0].careerLabel, '경력 8년↑', '  경력');
+  eq(rows[0].educationLabel, '대졸', '  학력');
+  eq(rows[0].employmentLabel, '정규직', '  고용형태');
+  ok(rows[0].sectors.includes('웹기획·PM'), '  직무 카테고리');
+  eq(rows[0].dueLabel, '채용시', '  마감 표기(목록)');
+  // 🔴 조건 span 을 자리로 집으면 학력이 빠진 공고에서 한 칸씩 밀린다. 모양으로 고른다.
+  ok(rows.every(r => !/경력|신입|무관/.test(r.areaLabel ?? '')), '  🔴 지역 칸에 경력 표기가 섞이지 않는다');
+
+  // 🔴 잡코리아를 "파싱 가능"으로 잘못 판정했던 원인 — 광고 블록의 링크를 목록으로 셌다.
+  //    인크루트 파서는 `<ul class="c_row" jobno=…>` 만 본다. 광고 블록에는 그 구조가 없다.
+  eq(icList('<div class="cPrdlists_box"><a href="https://job.incruit.com/jobdb_info/jobpost.asp?job=123">광고</a></div>').length, 0,
+    '  🔴 광고·추천 블록은 목록이 아니다');
+  eq(icList('').length, 0, '  빈 입력이면 0건');
+
+  eq(d.state, 'active', '  dday 클래스 ing → 진행중');
+  eq(d.dueKind, 'untilFilled', '  "채용시" 는 untilFilled');
+  eq(d.dueTime, '2026-09-10T23:59:00+09:00', '  접수기간 끝을 마감으로');
+  eq(d.company, '가온랩스 주식회사(GAONLABS)', '  회사명은 og:title 앞부분');
+  // 🔴 상세 페이지 앞쪽에는 광고·추천 회사 링크가 먼저 나온다. 첫 매칭을 집으면 **남의 회사**가 붙고,
+  //    회사 식별자는 재무 조회의 키라서 그대로 잘못된 재무가 실린다.
+  eq(d.companyId, '1000000001', '  🔴 회사 식별자는 공고 머리의 기업명 링크에서만 집는다');
+  // 🔴 근무지역 칸 안에 중첩 <ul> 이 있어 jc_list 를 통째로 자르면 뒤 항목이 조용히 빈다.
+  eq(d.educationLabel, '대졸', '  🔴 중첩 <ul> 뒤의 학력도 읽는다');
+  eq(d.areas[0], '서울 강남구', '  근무지');
+
+  // 🔴 마감 표본을 아직 못 봤다 → ing 가 아니면 마감으로 굳히지 않고 판정 불가로 둔다.
+  eq(icDetail('<strong class="dday xyz">D-3</strong><div id="btnLayerApply"></div>').state, null,
+    '  🔴 모르는 dday 클래스를 마감으로 굳히지 않는다');
+  eq(icDetail('<strong class="dday end">마감</strong>').state, 'closed', '  end 클래스는 마감');
+  // 신호가 어긋나면(진행 표시인데 지원 버튼이 없다) 판정을 포기한다.
+  eq(icDetail('<strong class="dday ing">채용시</strong>').state, null, '  🔴 지원 버튼이 없으면 판정을 포기한다');
+
+  eq(icCareer('경력 8년↑').from, 8, '  "경력 8년↑" 하한 8');
+  eq(icCareer('경력 13~20년').to, 20, '  "경력 13~20년" 상한 20');
+  eq(icCareer('경력무관').from, 0, '  경력무관은 0');
+  eq(icCareer('신입·경력 3년↓').from, 0, '  "신입·경력 3년↓" 하한 0');
+  eq(icCareer('').from, null, '  표기가 없으면 지어내지 않는다');
+
+  const body = icBody(fx('incruit-detail.html'));
+  eq(body.kind, 'text', '  글자 본문이면 text');
+  eq(icBody('<div class="jobpost_cont"><img src="//x.invalid/a.png"></div>').kind, 'imageOnly',
+    '  🔴 이미지뿐이면 imageOnly — 빈 파일을 남기지 않기 위해서다');
+
+  const rec = icNormalize(rows[0], d, ['서비스기획'], body);
+  eq(rec.board, 'incruit', '  레코드 board');
+  eq(rec.location.label, '서울', '  근무지 시·도');
+  eq(rec.location.district, '강남구', '  근무지 시·군·구');
+  eq(rec.location.lat, null, '  🔴 좌표를 주지 않는 보드다 — 지어내지 않는다');
+  eq(rec.annualFrom, 8, '  경력 하한');
+  eq(rec.company.boardId, '1000000001', '  회사 식별자는 목록 쪽을 먼저 믿는다');
+  eq(rec.aliveState, 'active', '  마감 판정 결과를 레코드에 남긴다');
+  eq(icNormalize(rows[0], { ...d, state: null }).aliveState, 'unknown', '  🔴 판정 불가는 unknown 으로 남는다');
+
+  eq(parsePostingUrl('https://job.incruit.com/jobdb_info/jobpost.asp?job=2600000000001')?.board, 'incruit',
+    '  인크루트 주소를 읽는다');
+  eq(parsePostingUrl('https://job.incruit.com/jobdb_info/jobpost.asp?job=2600000000001')?.id, '2600000000001',
+    '  인크루트 공고 ID');
+  eq(parsePostingUrl('https://job.incruit.com/jobdb_info/jobpost.asp'), null, '  ID 가 없으면 지어내지 않는다');
+});
+
+// ══ 잡코리아 — 상세 전용 (목록 수집기가 없다) ══════════════════════════════
+group('잡코리아 상세 · JSON-LD', () => {
+  const html = fx('jobkorea-detail.html');
+  const d = jkDetail(html);
+
+  // 🔴 클래스 이름이 아니라 schema.org JSON-LD 를 읽는다. 화면을 갈아엎어도 살아남는 유일한 자리다.
+  ok(d.hasJsonLd, '  JSON-LD JobPosting 을 찾는다');
+  eq(d.title, '[경력] 가온랩스 서비스기획자 채용', '  제목');
+  eq(d.company, '가온랩스', '  회사명');
+  eq(d.areas[0], '서울 강남구 테헤란로 1 (역삼동) 9층', '  근무지 주소');
+  eq(d.careerLabel, '경력무관', '  경력');
+  // 🔴 급여에 천 단위 쉼표가 있다. 쉼표로 그냥 자르면 "연봉 3" 에서 잘린다(실측).
+  eq(d.salaryLabel, '연봉 3,400~3,600만원(면접 후 결정)', '  🔴 급여의 천 단위 쉼표에서 잘리지 않는다');
+  eq(d.dueKind, 'always', '  "상시채용" 은 always');
+  // 🔴 마감 표본을 아직 못 봤다 → 마감 안내가 화면에 있을 때만 마감으로 둔다.
+  eq(d.state, null, '  🔴 마감 안내가 없으면 판정을 보류한다 (추측하지 않는다)');
+  eq(jkDetail('<div>이 공고는 마감된 공고입니다</div>').state, 'closed', '  마감 안내가 있으면 마감');
+
+  eq(jkSummary('경력 : 신입 , 급여 : 면접 후 결정, 마감일 : 2026-09-01')['마감일'], '2026-09-01', '  요약 항목 분해');
+  eq(findJobPosting('<script type="application/ld+json">{"@type":"Organization"}</script>'), null,
+    '  JobPosting 이 아니면 집지 않는다');
+  eq(findJobPosting('<script type="application/ld+json">깨진 JSON</script>'), null, '  깨진 JSON 은 건너뛴다');
+
+  const rec = jkNormalize('49799691', d, ['서비스기획']);
+  eq(rec.board, 'jobkorea', '  레코드 board');
+  eq(rec.location.label, '서울', '  근무지 시·도');
+  eq(rec.location.district, '강남구', '  근무지 시·군·구');
+  eq(rec.aliveState, 'unverified', '  🔴 마감 신호 미검증 사실을 레코드에 남긴다');
+  eq(rec.jdKind, 'summaryOnly', '  🔴 원문이 아니라 요약만 받았다는 사실을 남긴다');
+  eq(jkCareer('경력 3~5년').to, 5, '  경력 범위');
+
+  eq(parsePostingUrl('https://www.jobkorea.co.kr/Recruit/GI_Read/49799691')?.board, 'jobkorea', '  잡코리아 주소');
+  eq(parsePostingUrl('https://m.jobkorea.co.kr/Recruit/GI_Read/49799691?sc=554')?.id, '49799691', '  모바일 주소도 읽는다');
+});
+
+// ══ 저장본에서 공고 주소 뽑기 ═══════════════════════════════════════════════
+group('저장한 HTML → 공고 주소', () => {
+  const page = `<html><head><link rel="canonical" href="https://www.saramin.co.kr/zf_user/search/recruit?searchword=x">
+    </head><body>
+    <a href="https://www.jobkorea.co.kr/Recruit/GI_Read/111">A</a>
+    <a href="/zf_user/jobs/relay/view?rec_idx=222">상대경로</a>
+    <a href="https://job.incruit.com/jobdb_info/jobpost.asp?job=333&amp;src=gsw">엔티티</a>
+    <a href="https://evil.example.com/?x=wanted.co.kr/wd/999">함정</a>
+    <a href="https://www.jobkorea.co.kr/Recruit/GI_Read/111">중복</a>
+    <a href="/about">공고 아님</a></body></html>`;
+  const { postings, base } = extractPostings(page);
+  const keys = postings.map(p => `${p.board}:${p.id}`);
+
+  eq(keys.length, 3, '  공고 3건만 뽑는다 (중복·비공고 제외)');
+  ok(keys.includes('jobkorea:111'), '  절대 주소');
+  ok(keys.includes('saramin:222'), '  상대 경로를 canonical 로 편다');
+  ok(keys.includes('incruit:333'), '  &amp; 로 이스케이프된 주소');
+  // 🔴 문자열 포함 검사였다면 통과했을 함정. 호스트 검사는 board_url.mjs 하나에서만 한다.
+  ok(!keys.some(k => k.startsWith('wanted:')), '  🔴 남의 도메인에 보드 주소를 심은 링크는 통과 못 한다');
+  ok(base?.includes('saramin.co.kr'), '  기준 주소는 canonical 에서');
+
+  // 🔴 기준 주소를 모르면 상대 경로는 **버린다.** 호스트를 추측해 남의 공고를 받는 것보다 낫다.
+  const noBase = extractPostings('<a href="/zf_user/jobs/relay/view?rec_idx=222">x</a>');
+  eq(noBase.postings.length, 0, '  🔴 기준 주소가 없으면 상대 경로를 버린다');
+  eq(noBase.skipped.relativeNoBase, 1, '  버린 개수를 돌려준다 (조용히 줄지 않게)');
+
+  eq(baseUrlOf('<meta property="og:url" content="https://x.invalid/a?b=1">'), 'https://x.invalid/a', '  og:url 도 기준이 된다');
+  eq(baseUrlOf('<html></html>'), null, '  기준을 못 찾으면 null');
+
+  ok(hasLinkedIn('<a href="https://www.linkedin.com/jobs/view/123456">x</a>'), '  링크드인 공고를 알아본다');
+  ok(!hasLinkedIn('<a href="https://www.linkedin.com/feed/">x</a>'), '  링크드인 일반 링크는 공고가 아니다');
+  eq(describeSaved('<meta property="og:site_name" content="사람인">'), '사람인', '  저장본 출처 표기');
+
+  // 🔴 보드 분기는 한 곳에만 — add_posting 과 collect_saved 가 같은 표를 본다.
+  ok(canAdd('jumpit') && canAdd('incruit') && canAdd('jobkorea'), '  주소로 넣을 수 있는 보드');
+  ok(!canAdd('linkedin'), '  🔴 링크드인은 주소를 알아도 받지 않는다');
+  eq(ADDABLE_BOARDS.length, 5, '  주소로 넣을 수 있는 보드는 5개');
+});
 
 // ── 결과 ────────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(60)}`);

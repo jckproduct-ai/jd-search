@@ -33,7 +33,8 @@ import { EXPERIENCE_TAG_LABEL } from './lib/experience.mjs';
 import { normCorp } from './lib/text.mjs';
 import { mergeVerdicts } from './lib/merge.mjs';
 import { parsePostingUrl } from './lib/board_url.mjs';
-import { summarizeRuns, runsOf, BOARD_LABEL } from './lib/runstatus.mjs';
+import { summarizeRuns, runsOf, BOARD_LABEL, IMPLEMENTED_BOARDS } from './lib/runstatus.mjs';
+import { ADDABLE_BOARDS } from './lib/board_adapters.mjs';
 import { investmentLine } from './lib/investment.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -116,7 +117,7 @@ function buildData() {
   const runSummary = summarizeRuns(runsOf(store));
   const incomplete = [...runSummary.failures, ...runSummary.truncations].map(f => f.text);
   const enabled = Object.entries(profile.sources ?? {})
-    .filter(([b, m]) => ['wanted', 'saramin'].includes(b) && m !== 'off').map(([b]) => b);
+    .filter(([b, m]) => IMPLEMENTED_BOARDS.includes(b) && m !== 'off').map(([b]) => b);
   const collected = new Set(Object.values(postings).map(p => p.board));
 
   const visible = rows.filter(r => !r.hidden);
@@ -126,6 +127,7 @@ function buildData() {
     criteria: { regions: profile.location?.regions ?? [] },
     baseline: fin.baseline ? { company: fin.baseline.company, year: fin.baseline.year } : null,
     gradeLabels: GRADE_LABEL, boardLabels: BOARD_LABEL,
+    addableBoards: ADDABLE_BOARDS.map(b => BOARD_LABEL[b] ?? b),
     tagLabels: { remote: '풀리모트', hybrid: '하이브리드', ...EXPERIENCE_TAG_LABEL, watchlist: '관심회사' },
     reasonLabels: {
       outOfRegion: '희망 지역 밖', denyRegion: '제외 지역', blocklist: '제외 회사',
@@ -184,7 +186,7 @@ rowFilter = r => showHidden ? true : !r.hidden;
 const bar = el('div','addbar');
 bar.append(el('span',null,'공고 추가'));
 const addInput = document.createElement('input');
-addInput.type = 'url'; addInput.placeholder = '원티드·사람인 공고 주소를 붙여 넣으십시오';
+addInput.type = 'url'; addInput.placeholder = (D.addableBoards ?? []).join('·') + ' 공고 주소를 붙여 넣으십시오';
 bar.append(addInput);
 const addBtn = el('button',null,'가져오기');
 const addMsg = el('span','saved','');
@@ -372,7 +374,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/add') {
       const { url: raw } = await readBody(req);
       // 🔴 붙여 넣은 주소를 그대로 넘기지 않는다. 지원하는 보드·형태인지 여기서 먼저 막는다.
-      if (!parsePostingUrl(raw)) return json(res, 400, { error: '원티드·사람인 공고 주소가 아닙니다' });
+      // 🔴 안내 문구를 손으로 적지 않는다. 보드가 늘었는데 문구가 그대로면 화면이 거짓말을 한다.
+      if (!parsePostingUrl(raw)) {
+        return json(res, 400, { error: `${ADDABLE_BOARDS.map(b => BOARD_LABEL[b] ?? b).join('·')} 공고 주소가 아닙니다` });
+      }
       const r = await runScript('add_posting.mjs', ['--profile', PROFILE_ID, '--url', raw]);
       if (!r.ok) return json(res, 500, { error: (r.err || r.out).trim().split('\n').pop()?.slice(0, 200) || '실패' });
       return json(res, 200, { ok: true, message: r.out.trim().split('\n').pop() ?? '추가했습니다' });

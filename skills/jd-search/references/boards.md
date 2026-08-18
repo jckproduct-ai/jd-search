@@ -9,17 +9,84 @@
 
 ## 채용 보드
 
-| 보드 | 수집 | 마감 판정 신호 |
-|---|---|---|
-| **원티드** | `api` | 공개 API `/api/v4/jobs/{id}` 의 `status` (`active` / `close`). 토큰 0, 가장 빠르다 |
-| **사람인** | `api`(공개 웹) | 상세의 `<div class="status">` 블록. 🔴 마감일 경과가 아니다 |
-| **잡코리아** | `browser` | `og:description` 의 `마감일:` 필드 |
-| **잡플래닛** | `browser` | ⚠️ curl은 403. 브라우저 필요 |
-| **리멤버** | `browser` | 임베드 JSON 의 `status` / `closedAt` |
-| **인크루트** | `browser` | 목록 페이지 마감 표기 |
-| **비즈니스피플** | `browser` | `og:description` 의 `마감일:` 필드 |
-| **자사 채용페이지** | `browser` | 임베드 JSON 의 `status` / `closedAt` |
-| **LinkedIn** | `off` | 🔴 기본 비활성. 스크래핑 제재가 **사용자 개인 계정**에 온다 |
+| 보드 | 수집 | 목록 | 마감 판정 신호 |
+|---|---|---|---|
+| **원티드** | `api` | ✅ | 공개 API `/api/v4/jobs/{id}` 의 `status` (`active` / `close`). 토큰 0, 가장 빠르다 |
+| **사람인** | `web` | ✅ | 상세의 `<div class="status">` 블록. 🔴 마감일 경과가 아니다 |
+| **점핏** | `api` | ✅ | `invisible`. 🔴 마감 표본 미확보 — `unverified` 로 남긴다 |
+| **인크루트** | `web` | ✅ | 상세의 `<strong class="dday ing">`. 🔴 EUC-KR 이다 |
+| **잡코리아** | `saved` | ❌ | 상세의 schema.org JSON-LD + `og:description` 의 `마감일:` |
+| **잡플래닛** | `saved` | ❌ | ⚠️ curl 403 |
+| **로켓펀치** | `saved` | ❌ | 목록이 SPA 껍데기(공고 링크 0개) |
+| **리멤버** | `browser` | ❌ | 임베드 JSON 의 `status` / `closedAt` |
+| **비즈니스피플** | `browser` | ❌ | `og:description` 의 `마감일:` 필드 |
+| **자사 채용페이지** | `browser` | ❌ | 임베드 JSON 의 `status` / `closedAt` |
+| **LinkedIn** | `off` | ❌ | 🔴 **열지 않는다.** 아래 별도 항목 |
+
+`saved` = 사용자가 브라우저에서 열어 저장한 HTML 에서 **공고 주소만** 뽑고, 상세는 그 보드의 파서가 다시 읽는다
+(`collect_saved.mjs`). 목록이 JS 로 그려지거나 curl 이 막히는 보드가 여기로 온다.
+
+### 🔴 "목록이 HTML 안에 있다" 를 링크 개수로 판단하지 말 것 (2026-08-18 실패)
+
+잡코리아 검색 결과에서 `GI_Read/<번호>` 링크 26개를 세고 "파싱 가능"이라고 적었다가 틀렸다.
+**그 26개는 광고·추천 공고였다.** 실제 목록은 React 가 그려서 서버 HTML 에 없고, 모바일도 같다.
+→ 확인할 것은 링크 개수가 아니라 **회사명·제목이 같은 블록 안에 붙어 있는가**다.
+
+### 점핏 엔드포인트 (2026-08-18 실측 확정 · 키 불필요)
+
+```
+목록  GET https://jumpit-api.saramin.co.kr/api/positions?page=<0부터>&keyword=<kw>
+      → .result.totalCount · .result.positions[] (페이지당 16건) · .result.emptyPosition
+상세  GET https://jumpit-api.saramin.co.kr/api/position/<id>
+      → .result (본문·근무지·마감·경력·학력)
+```
+
+🔴 **없는 공고는 404 가 아니라 400 + `code:"C003"`("Entity Not Found")** 로 온다.
+상태 코드만 보면 400 을 전부 마감으로 굳히게 된다.
+
+🔴 **공백이 든 키워드를 사실상 무시한다.** `서비스기획` → 3건(전부 관련), `서비스 기획` → 724건,
+`프로덕트 매니저` → **똑같이 724건**. totalCount 가 같다는 건 키워드로 좁히지 않았다는 뜻이다.
+제목 매치율도 p0~p11 이 0~6% 로 처음부터 잡음이었다.
+→ 수집기가 이걸 감지해 `keywordIgnored` 로 표시하고, 사용자에게 **붙여 쓴 표기를 넣으라고** 말한다.
+
+🔴 점핏 호스트는 `jumpit.saramin.co.kr` 이라 **사람인 규칙(`.saramin.co.kr` 로 끝남)에 먼저 걸린다.**
+`board_url.mjs` 에서 순서와 제외 조건을 둘 다 걸어 뒀다.
+
+### 인크루트 엔드포인트 (2026-08-18 실측 확정 · 키 불필요)
+
+```
+목록  GET /jobdb_list/searchjob.asp?kw=<kw>&page=<n>&articlecount=60
+      → <ul class="c_row" jobno="..."> 블록. 한 페이지 60건. 🔴 광고 블록(cPrdlists_*)은 이 구조가 없다
+상세  GET /jobdb_info/jobpost.asp?job=<jobno>
+      → <strong class="dday ing"> · <ul class="jc_list"> · meta description 의 "접수기간: … ~ …"
+```
+
+🔴 **EUC-KR 로 내려준다.** UTF-8 로 읽으면 회사명·제목이 깨진 글자가 되는데 **오류가 나지 않아**
+그대로 저장되고 리포트에 실린다. `request(url, { charset: 'euc-kr' })` 로 못 박았다.
+
+🔴 상세의 `<ul class="jc_list">` 를 통째로 자르면 안 된다. 근무지역 칸 안에 **중첩된 `<ul>`** 이 있어
+비탐욕 매칭이 거기서 끝나고 **학력·급여가 조용히 빈다**(실측).
+
+🔴 상세 페이지 앞쪽에는 광고 회사 링크가 먼저 나온다. 첫 `company/<번호>` 를 집으면 **남의 회사 식별자**가
+붙는다(실측: 목록 1000000001 / 첫 매칭 9000000001). 회사 식별자는 재무 조회의 키라서 그대로 오매칭이 된다.
+
+### 잡코리아 — 상세만 (2026-08-18)
+
+목록 수집기는 **없다.** 주소를 알면 상세는 읽는다.
+🔴 상세는 CSS 클래스가 아니라 **schema.org JSON-LD(JobPosting)** 를 읽는다 —
+클래스 이름(`text-typo-b2-16` 류)은 빌드마다 바뀌지만 JSON-LD 는 표준이라 살아남는다.
+🔴 `og:description` 의 요약을 쉼표로 자르면 **급여의 천 단위 쉼표에서 잘린다**(`연봉 3`). 실측 확인.
+
+### 🔴 LinkedIn — 도구가 접속하는 경로는 만들지 않는다
+
+| 길 | 성립하나 |
+|---|---|
+| 공개 API | ❌ 개인이 쓸 수 있는 공개 채용 검색 API 가 없다 (파트너 계약 필요) |
+| 에이전트 브라우저 | ❌ 이용약관이 자동 접근을 금지하고, **제재가 사용자 개인 계정에 온다** |
+| 저장본 | 🟡 이론상 가능하나 **파서를 검증하지 못했다** — 검증하려면 접속해야 하는데 그게 금지다 |
+
+`collect_saved.mjs` 는 저장본에 링크드인 공고가 들어 있으면 **주소를 알아도 받지 않고 이유를 말한다.**
+구직 중인 사람에게 계정 정지는 이 도구가 줄 수 있는 최악의 손해다 — 공고 몇 건과 바꿀 것이 아니다.
 
 ### 원티드 엔드포인트 (2026-08-10 실측 확정)
 

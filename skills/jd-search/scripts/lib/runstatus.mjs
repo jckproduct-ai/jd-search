@@ -8,8 +8,21 @@
 
 import { kindOfStatus, diagnose } from './http.mjs';
 
-export const BOARD_LABEL = { wanted: '원티드', saramin: '사람인' };
+export const BOARD_LABEL = {
+  wanted: '원티드', saramin: '사람인', jumpit: '점핏', incruit: '인크루트',
+  jobkorea: '잡코리아', saved: '저장본',
+};
 export const boardLabel = b => BOARD_LABEL[b] ?? b;
+
+/**
+ * 🔴 **수집기가 실제로 있는 보드.** render·serve 가 각자 배열 리터럴을 들고 있다가
+ *    보드를 하나 추가하면 한 화면에서만 "아직 수집하지 않았습니다"가 뜨는 자리였다.
+ *    `profile.yml` 의 sources 에는 아직 수집기가 없는 보드도 적혀 있어서 그대로 쓰면 안 된다.
+ */
+// 🔴 잡코리아는 여기 없다 — **목록 수집기가 없기 때문이다**(검색 결과가 JS 로 그려져 HTML 에 없다).
+//    주소를 알면 상세는 읽는다(`add_posting` · `collect_saved`). 여기에 넣으면
+//    "아직 수집하지 않았습니다" 경고가 영원히 떠 있게 된다 — 돌릴 수집기가 없으니 지울 방법이 없다.
+export const IMPLEMENTED_BOARDS = ['wanted', 'saramin', 'jumpit', 'incruit'];
 
 /**
  * 🔴 보드별 실행 기록을 꺼내는 자리도 하나로 모은다.

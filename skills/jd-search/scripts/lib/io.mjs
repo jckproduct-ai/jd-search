@@ -121,7 +121,10 @@ export function jsonCache(file) {
  * 🔴 `api`(공식 API)와 `web`(공개 페이지 HTML 파싱)을 구분해 적는다.
  *    같은 이름으로 묶으면 이 도구가 무엇을 하고 있는지 문서가 흐려진다.
  */
-export const SOURCE_MODES = ['api', 'web', 'browser', 'off'];
+// 🔴 `saved` = 목록을 도구가 못 받는 보드. 사용자가 브라우저에서 열어 **저장한 HTML** 을
+//    `collect_saved.mjs` 에 넣으면 거기서 공고 주소만 뽑고 상세는 그 보드의 파서가 읽는다.
+//    목록 수집기를 부르는 스크립트는 이 값을 만나면 멈춘다 — 돌릴 수집기가 없기 때문이다.
+export const SOURCE_MODES = ['api', 'web', 'saved', 'browser', 'off'];
 
 export function requireSourceEnabled(profile, board, fallback = 'api') {
   const mode = profile.sources?.[board] ?? fallback;
@@ -131,5 +134,11 @@ export function requireSourceEnabled(profile, board, fallback = 'api') {
       `${SOURCE_MODES.join(' · ')} 중 하나여야 합니다.`);
   }
   if (mode === 'off') throw new Error(`profile.yml 의 sources.${board} 가 off 입니다.`);
+  if (mode === 'saved') {
+    throw new Error(
+      `profile.yml 의 sources.${board} 가 saved 입니다 — 이 보드는 목록을 자동으로 받지 못합니다.\n` +
+      '브라우저에서 검색 결과를 연 뒤 저장(⌘S)해서 이렇게 넣어 주십시오:\n' +
+      '  node scripts/collect_saved.mjs --file <저장한.html>');
+  }
   return mode;
 }

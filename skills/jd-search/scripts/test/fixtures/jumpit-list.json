@@ -1,0 +1,95 @@
+{
+ "message": "포지션 리스트가 조회되었습니다.",
+ "status": 200,
+ "code": "P004",
+ "result": {
+  "totalCount": 3,
+  "page": 0,
+  "keyword": "서비스기획",
+  "keywordType": "company",
+  "positions": [
+   {
+    "id": 54581439,
+    "jobCategory": "개발 PM",
+    "logo": "https://example.invalid/logo.webp",
+    "imagePath": "https://example.invalid/img.webp",
+    "title": "IT <span>서비스기획</span>자 경력 채용",
+    "companyName": "가온랩스",
+    "techStacks": [
+     "Confluence",
+     "Figma",
+     "Jira",
+     "AI/인공지능",
+     "ERP",
+     "SAP",
+     "Notion"
+    ],
+    "viewCount": 27,
+    "newcomer": false,
+    "minCareer": 5,
+    "maxCareer": 8,
+    "locations": [
+     "서울 강남구"
+    ],
+    "alwaysOpen": false,
+    "closedAt": "2026-08-26T23:59:59",
+    "serialNumber": "2208837259",
+    "encodedSerialNumber": "MjIwODgzNzI1OQ==",
+    "celebration": 50,
+    "scraped": false,
+    "applied": false
+   },
+   {
+    "id": 54582342,
+    "jobCategory": "devops/시스템 엔지니어",
+    "logo": "https://example.invalid/logo.webp",
+    "imagePath": "https://example.invalid/img.webp",
+    "title": "[개발본부]클라우드 PM (12~17년)",
+    "companyName": "이레인터랙티브",
+    "techStacks": [
+     "Azure DevOps"
+    ],
+    "viewCount": 7,
+    "newcomer": false,
+    "minCareer": 12,
+    "maxCareer": 17,
+    "locations": [
+     "서울 강남구"
+    ],
+    "alwaysOpen": false,
+    "closedAt": "2026-08-28T23:59:59",
+    "serialNumber": "2208163122",
+    "encodedSerialNumber": "MjIwODE2MzEyMg==",
+    "celebration": 50,
+    "scraped": false,
+    "applied": false
+   },
+   {
+    "id": 54739063,
+    "jobCategory": "devops/시스템 엔지니어",
+    "logo": "https://example.invalid/logo.webp",
+    "imagePath": "https://example.invalid/img.webp",
+    "title": "[개발본부]클라우드 PM (7~11년)",
+    "companyName": "테라픽스",
+    "techStacks": [
+     "Azure DevOps"
+    ],
+    "viewCount": 2,
+    "newcomer": false,
+    "minCareer": 7,
+    "maxCareer": 11,
+    "locations": [
+     "서울 강남구"
+    ],
+    "alwaysOpen": false,
+    "closedAt": "2026-09-16T23:59:59",
+    "serialNumber": "2208163122",
+    "encodedSerialNumber": "MjIwODE2MzEyMg==",
+    "celebration": 50,
+    "scraped": false,
+    "applied": false
+   }
+  ],
+  "emptyPosition": false
+ }
+}

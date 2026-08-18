@@ -20,7 +20,7 @@ import { GRADE_LABEL } from './lib/grade.mjs';
 import { normCorp } from './lib/text.mjs';
 import { mergeVerdicts } from './lib/merge.mjs';
 import { EXPERIENCE_TAG_LABEL } from './lib/experience.mjs';
-import { summarizeRuns, runsOf, BOARD_LABEL } from './lib/runstatus.mjs';
+import { summarizeRuns, runsOf, BOARD_LABEL, IMPLEMENTED_BOARDS } from './lib/runstatus.mjs';
 import { investmentLine } from './lib/investment.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -123,7 +123,7 @@ const runSummary = summarizeRuns(runsOf(store));
 const incomplete = [...runSummary.failures, ...runSummary.truncations].map(f => f.text);
 // 🔴 아직 한 번도 안 돌린 보드가 있으면 그 사실도 경고다. 안 돌린 보드의 공고는 존재 자체가 안 보인다.
 const enabledBoards = Object.entries(profile.sources ?? {})
-  .filter(([b, mode]) => ['wanted', 'saramin'].includes(b) && mode !== 'off').map(([b]) => b);
+  .filter(([b, mode]) => IMPLEMENTED_BOARDS.includes(b) && mode !== 'off').map(([b]) => b);
 const collected = new Set(Object.values(postings).map(p => p.board));
 // 🔴 "안 돌린 것"과 "돌렸는데 막힌 것"은 다르다. 막힌 보드에 "아직 수집하지 않았습니다"라고 적으면
 //    사용자는 자기가 안 돌린 줄 알고 같은 실행을 반복한다 — 바로 위에 차단 경고를 띄워 놓고서.

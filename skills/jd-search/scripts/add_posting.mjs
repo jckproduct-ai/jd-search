@@ -12,10 +12,9 @@
  *    손으로 넣은 공고만 본문 없는 반쪽 레코드가 되고, 그 차이는 마감된 뒤에야 드러난다.
  * 🔴 이미 있는 공고면 덮어쓰지 않고 최신 상태만 갱신한다.
  */
-import { loadProfile, statePath, readJson, writeJson, saveJd } from './lib/io.mjs';
+import { loadProfile, statePath, readJson, writeJson } from './lib/io.mjs';
 import { parsePostingUrl } from './lib/board_url.mjs';
-import * as wanted from './lib/wanted.mjs';
-import * as saramin from './lib/saramin.mjs';
+import { recordFromId } from './lib/board_adapters.mjs';
 
 const argv = process.argv.slice(2);
 const flag = n => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : null; };
@@ -29,9 +28,12 @@ if (!raw) {
 
 const parsed = parsePostingUrl(raw);
 if (!parsed) {
-  console.error('원티드·사람인 공고 주소가 아닙니다. 지금 지원하는 형태:');
+  console.error('아직 읽을 수 없는 주소입니다. 지금 지원하는 형태:');
   console.error('  https://www.wanted.co.kr/wd/<번호>');
   console.error('  https://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=<번호>');
+  console.error('  https://jumpit.saramin.co.kr/position/<번호>');
+  console.error('  https://job.incruit.com/jobdb_info/jobpost.asp?job=<번호>');
+  console.error('  https://www.jobkorea.co.kr/Recruit/GI_Read/<번호>');
   process.exit(1);
 }
 
@@ -40,28 +42,12 @@ const store = readJson(file, { updatedAt: null, postings: {} });
 const key = `${parsed.board}:${parsed.id}`;
 const existed = Boolean(store.postings[key]);
 
-let rec = null;
-if (parsed.board === 'wanted') {
-  const d = await wanted.fetchDetail(parsed.id);
-  if (d.gone) { console.error('이미 내려간 공고입니다 (404).'); process.exit(1); }
-  if (d.unknown) { console.error(`조회하지 못했습니다: ${d.error}`); process.exit(1); }
-  rec = wanted.toRecord(profile, d.job, {}, ['수동 추가']);
-} else {
-  // 🔴 사람인은 목록 항목이 있어야 회사명·지역을 안다. 손으로 넣을 때는 목록이 없으므로
-  //    상세에서 읽히는 것만으로 최소 항목을 만들고, 모르는 값은 비워 둔다(지어내지 않는다).
-  const d = await saramin.fetchDetail(parsed.id);
-  if (d.gone) { console.error('이미 내려간 공고입니다 (404).'); process.exit(1); }
-  if (d.unknown) { console.error(`조회하지 못했습니다: ${d.error}`); process.exit(1); }
-  const item = {
-    id: parsed.id, url: saramin.postingUrl(parsed.id),
-    title: d.detail.title ?? `(제목 미상) ${parsed.id}`,
-    company: d.detail.company ?? '', csn: d.detail.csn ?? null,
-    sido: null, district: null, careerLabel: d.detail.careerLabel, dueLabel: null, sectors: [],
-  };
-  const body = await saramin.fetchBody(parsed.id);
-  rec = saramin.normalize(item, d.detail, ['수동 추가'], body);
-  rec.jd = saveJd(profile, 'saramin', rec.id, saramin.jdMarkdown(item, d.detail, body));
-}
+// 🔴 보드 분기는 `lib/board_adapters.mjs` 하나에만 둔다. 여기에 else 가지를 두면
+//    보드가 늘어날 때(점핏·인크루트·잡코리아) **모르는 보드가 사람인으로 조회돼** 남의 공고가 들어온다.
+const r = await recordFromId(profile, parsed.board, parsed.id, ['수동 추가']);
+if (r.gone) { console.error('이미 내려간 공고입니다.'); process.exit(1); }
+if (r.unknown) { console.error(`조회하지 못했습니다: ${r.error}`); process.exit(1); }
+const rec = r.rec;
 
 rec.discoveredVia = 'manual';
 rec.seenRunId = new Date().toISOString();

@@ -25,6 +25,29 @@
 > **궁합 점수는 만들지 않습니다.** "이 공고가 당신과 87% 맞습니다" 같은 숫자는 검증할 수 없습니다.
 > 이력서는 **검색 키워드를 만드는 재료**로만 씁니다.
 
+<details>
+<summary><b>In English</b></summary>
+
+<br>
+
+**jd-search** is an agent skill for the Korean job market. Give it one resume and one home address, and it collects every posting in your field within commutable range, attaches each company's financial risk, and renders a single report.
+
+It runs on Claude Code, Codex, Cursor, and Gemini CLI. Zero dependencies, one optional API key, AGPL-3.0.
+
+What makes it different from a job aggregator:
+
+- **Financial facts are attached to each posting.** Not just revenue — it grades capital impairment and consecutive losses, and drafts questions to ask that company in an interview.
+- **It does not stop at financial statements.** Statements describe last year, so money raised this year is invisible in them. jd-search overlays DART filings for capital raises (rights offerings, convertible bonds). A company flagged for capital impairment that raised money last month is a different situation.
+- **Range is a collection filter, not a label.** Postings outside commutable range never enter the list. (Currently based on region; measured commute time is not implemented yet.)
+- **What is missing is shown.** Excluded postings are listed with company, role, and reason. Companies it could not judge are marked as unjudged rather than dropped. Silent omission is the failure mode this tool guards against hardest.
+- **No match score.** "This posting is an 87% fit for you" cannot be verified, so it is not produced. The resume is used only as material for building search keywords.
+
+Measured, not estimated: financial coverage is 48.9% (135 companies, Saramin) and 50.0% (30 companies, Wanted) on real pipeline output; 22% of postings carry no closing date at all; 562 regression tests pass with no network and no key.
+
+Everything runs locally. Postings, resume, and home address never leave the machine.
+
+</details>
+
 ---
 
 ## 결과물
@@ -122,7 +145,7 @@ node skills/jd-search/scripts/test/run.mjs   # 잘 받아졌는지 확인 (네�
 
 | | |
 |---|---|
-| 채용 사이트 수집 (원티드·사람인) | **키 불필요** |
+| 채용 사이트 수집 (원티드·사람인·점핏·인크루트) | **키 불필요** |
 | 회사 재무·자금등급 | 공공데이터포털 인증키 **1개** (무료) — DART 공시는 키 없이 조회합니다 |
 | 통근 시간 실측 | 카카오 · ODsay (무료, 선택) — 없으면 지역 필터만으로 동작합니다 |
 | LLM | **불필요** — 이 스킬을 실행하는 에이전트가 그 역할을 합니다 |
@@ -182,7 +205,7 @@ setx DATA_GO_KR_KEY "여기에 붙여넣기"
 
 ### 5단계 · 첫 실행 — 이때만 오래 걸립니다
 
-<img src="docs/images/onboarding-3-console.png" alt="실제 실행 출력 — 회귀 테스트 442건 통과, 리포트 생성, serve 기동" width="100%">
+<img src="docs/images/onboarding-3-console.png" alt="실제 실행 출력 — 회귀 테스트 통과, 리포트 생성, serve 기동" width="100%">
 
 > 이 화면은 재현이 아니라 **실제 실행 출력**입니다. 매번 바뀌는 `serve` 토큰만 가렸습니다.
 
@@ -191,7 +214,7 @@ setx DATA_GO_KR_KEY "여기에 붙여넣기"
 **두 번째 실행부터는 기본 200건**이며, 이 상한은 **새로 받아야 하는 공고만** 셉니다 — 이미 받아 둔 것까지 세면 목록 뒤쪽의 새 공고가 영영 안 받아집니다.
 
 - 중간에 끊겨도 처음부터 다시 돌지 않습니다. 단계마다 결과를 파일로 남기고 이어서 갑니다
-- 받아진 게 성한지 의심되면 `node skills/jd-search/scripts/test/run.mjs` — **네트워크도 키도 없이** 회귀 테스트 442건이 돕니다
+- 받아진 게 성한지 의심되면 `node skills/jd-search/scripts/test/run.mjs` — **네트워크도 키도 없이** 회귀 테스트 562건이 돕니다
 
 ---
 
@@ -243,10 +266,11 @@ node skills/jd-search/scripts/serve.mjs
 ## 어떻게 동작합니까
 
 ```
-1 collect   잡보드 → 원시 공고                 ✅ 원티드 · 사람인
+1 collect   잡보드 → 원시 공고                 ✅ 원티드 · 사람인 · 점핏 · 인크루트
+            + 내가 저장한 검색 결과 HTML       ✅ 잡코리아 · 잡플래닛 · 로켓펀치
 2 merge     보드 간 중복 합치기                ✅
 3 gate      지역·제외조건으로 컷               ✅  ← 여기서 절반 이상이 걸러집니다
-4 alive     마감 재확인 + 재공고 되찾기        ✅ 두 보드 모두
+4 alive     마감 재확인 + 재공고 되찾기        ✅ 네 보드 모두
 5 finance   회사 → 공시 → 자금등급             ✅
 6 commute   상위 후보만 통근 정밀 실측 (선택)  ⏳ 미구현
 7 render    report.html                        ✅
@@ -266,7 +290,7 @@ node skills/jd-search/scripts/serve.mjs
 **마감된 자리는 회사 단위로 되짚습니다.** 공고 ID 하나만 보면 같은 자리가 새 ID로 다시 올라온 것을 놓칩니다(실측 6건).
 다만 같은 회사의 아무 공고나 끌어오지는 않습니다 — 같은 자리로 이어지거나 내 직군에 걸리는 것만 가져오고, 나머지는 알려만 드립니다.
 
-### 보드가 둘이면 중복이 생깁니다
+### 보드가 여럿이면 중복이 생깁니다
 
 같은 자리가 원티드와 사람인에 동시에 올라오는 일은 흔합니다. 회사명이 정확히 같고, 제목이 같은 자리로 보이고, 근무지가 겹칠 때만 하나로 합쳐 **출처 링크를 둘 다** 답니다. 한쪽이 먼저 내려가기 때문입니다.
 
@@ -278,6 +302,11 @@ node skills/jd-search/scripts/serve.mjs
 |---|---|---|
 | 원티드 | API `status` | 좌표를 그대로 줍니다 |
 | 사람인 | 상세의 접수 상태 블록 | 좌표가 없고, **근무지가 여러 곳**일 수 있습니다 |
+| 점핏 | `invisible` | 없는 공고가 404가 아니라 **400**으로 옵니다. 공백이 든 키워드는 검색이 무시합니다 |
+| 인크루트 | 상세의 진행 표시 | **EUC-KR**로 내려옵니다. UTF-8로 읽으면 회사명이 조용히 깨집니다 |
+| 잡코리아 | 상세의 JSON-LD | 목록이 JS로 그려져 **자동 수집이 안 됩니다** — 저장한 페이지로 넣습니다 |
+
+**마감 표본을 못 본 보드는 못 봤다고 적습니다.** 점핏·잡코리아는 마감된 공고의 응답을 아직 확보하지 못해서, 살아있다고 단정하지 않고 `미검증`으로 남긴 뒤 다음 실행에서 다시 확인합니다.
 
 **날짜가 지났다는 이유로 마감 처리하지 않습니다.** 사람인 실측 40건 중 9건(22%)이 마감일 자체가 없는 상시채용·채용시 공고였습니다.
 
@@ -365,7 +394,7 @@ DART **정형 API만 붙이면 2%p밖에 오르지 않습니다.** 구직자가 
 
 - **자동 지원 · 이력서 자동 제출** — 계정 정지 위험이 사용자에게 옵니다
 - **동의 없는 크롤링** — 공개 API가 없는 보드는 열 때마다 물어봅니다
-- **LinkedIn 수집** — 기본 비활성입니다. 제재가 개인 계정에 옵니다
+- **LinkedIn 수집** — 이 도구가 LinkedIn에 접속하는 경로는 **아예 만들지 않았습니다.** 저장한 페이지에 LinkedIn 공고가 섞여 있어도 받지 않고, 왜 안 받는지 말합니다. 제재가 이 컴퓨터가 아니라 **당신 계정**에 오기 때문입니다
 - **합격률처럼 보이는 숫자** — 검증할 수 없습니다
 - **추측으로 공고 버리기** — 판정이 불확실하면 버리지 않고 "미확인" 탭에 남깁니다
 

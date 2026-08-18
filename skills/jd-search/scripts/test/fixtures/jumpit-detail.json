@@ -1,0 +1,88 @@
+{
+ "message": "조회에 성공하셨습니다.",
+ "status": 200,
+ "code": "C001",
+ "result": {
+  "id": 54581439,
+  "title": "IT 서비스기획자 경력 채용",
+  "companyName": "가온랩스",
+  "techStacks": [
+   {
+    "stack": "Confluence",
+    "imagePath": "https://cdn.jumpit.co.kr/images/stacks/confluence.png"
+   },
+   {
+    "stack": "Figma",
+    "imagePath": "https://cdn.jumpit.co.kr/images/stacks/figma.png"
+   },
+   {
+    "stack": "Jira",
+    "imagePath": "https://cdn.jumpit.co.kr/images/stacks/jira.png"
+   },
+   {
+    "stack": "AI/인공지능",
+    "imagePath": "https://cdn.jumpit.co.kr/images/stacks/noStack.png"
+   },
+   {
+    "stack": "ERP",
+    "imagePath": "https://cdn.jumpit.co.kr/images/stacks/noStack.png"
+   },
+   {
+    "stack": "SAP",
+    "imagePath": "https://cdn.jumpit.co.kr/images/stacks/noStack.png"
+   },
+   {
+    "stack": "Notion",
+    "imagePath": "https://cdn.jumpit.co.kr/images/stacks/noStack.png"
+   }
+  ],
+  "serviceInfo": "쥬비스다이어트는 2012년에 설립된 회사로 자본금 26억 3,980만원, 매출액 867억 8,029만원, 사원수 405명 규모의 기업입니다. 서울 강남구 삼성로 434 (대치동, 쥬비스타워)에 위치하고 있으며, 다이어트 컨설팅사업을 하고 있습니다.\r\n'세상을 건강하게 변화시키는 기업'이라는 슬로건아래 국내 다이어트 1위 기업입니다.\r\n\r\nhttp://www.juvis.co.kr",
+  "responsibility": "• 쥬비스 전사 디지털 서비스의 서비스 기획 및 운영 고도화\r\n• 고객 WEB/APP, CRM/ERP, 지점 운영 시스템 등 내·외부 서비스 기획\r\n• 신규 서비스 및 기능의 제로투원 기획: 문제 정의, 사용자/운영자 니즈 분석, 정책 설계, 화면 설계, 사용자 시나리오 작성\r\n• 현업 요청사항 기반 요구사항 정의 및 서비스 개선안 도출\r\n• 서비스 운영 과정에서 발생하는 VOC, 장애, 운영 이슈 분석 및 개선 기획\r\n• 데이터 및 사용 흐름 기반 서비스 개선 과제 발굴\r\n• 개발, 디자인, 운영, 마케팅 등 유관부서와 협업하여 서비스 출시 및 운영 안정화\r\n• Confluence, Jira, Figma 등 협업 도구를 활용한 기획 산출물 작성 및 이슈 관리",
+  "qualifications": "• IT 서비스기획 경력 5년 이상 보유하신 분\n• 실제 서비스를 직접 담당하여 기획, 출시, 운영, 개선까지 경험해보신 분\n• 신규 서비스 또는 신규 기능을 제로투원으로 기획해본 경험이 있으신 분\n• 요구사항 정의서, 정책서, 화면설계서, 사용자 시나리오 등 기획 산출물 작성 역량을 보유하신 분\n• 고객/운영자/현업의 요구사항을 구조화하고, 서비스 관점에서 문제를 재정의할 수 있는 분\n• 개발자, 디자이너, 현업 부서와 명확하게 커뮤니케이션하며 협업할 수 있는 분\n• 협업 과정에서 일정과 이슈를 주도적으로 조율하며 서비스를 완성해본 경험이 있으신 분\n• 서비스 오픈 이후 운영 이슈를 추적하고, 지속적으로 개선해본 경험이 있으신 분\n• 문제 해결력, 논리적 사고, 책임감 있는 업무 완결성을 보유하신 분",
+  "preferredRequirements": "• 고객용 WEB/APP 서비스와 내부 운영 시스템을 함께 기획하거나 연계해본 경험이 있으신 분\n• CRM, ERP, 예약, 결제, 상담, 회원관리 등 백오피스/운영 시스템 기획 경험이 있으신 분\n• 헬스케어, 뷰티, 리테일, O2O, 멤버십 기반 서비스에 대한 이해가 있으신 분\n• 운영 데이터를 기반으로 서비스 개선 과제를 도출해본 경험이 있으신 분\n• Figma, Jira, Confluence, Notion 등 협업 도구 활용에 익숙하신 분\n• AI 도구를 활용해 요구사항 정리, 정책 초안 작성, 회의록 요약, 백로그 정리 등 기획 업무 생산성을 높여본 경험이 있으신 분",
+  "welfares": "• 생일자 반차 및 경조휴가\r\n• 복지몰 운영\r\n• 장기근속자 포상\r\n• 생일자/명절 선물\r\n• 어버이날 꽃바구니 지급\r\n• 회식비 지원\r\n• 리조트 할인\r\n• 건강검진 지원\r\n• 자사제품 할인",
+  "recruitProcess": "인재상\r\n• 실제 서비스의 문제를 직접 정의하고, 해결안을 기획하여 출시와 운영 개선까지 책임감 있게 경험해보신 분\r\n• 신규 서비스 또는 신규 기능의 초기 구조를 잡고, 정책·화면·사용자 흐름으로 구체화해본 분\r\n• 개발, 디자인, 현업 부서와의 협업 과정에서 일정과 이슈를 주도적으로 조율하며 서비스를 완성해본 분\r\n• 현업 요청을 그대로 개발 요청으로 전달하기보다, 목적과 영향을 파악해 더 나은 기획안으로 정리할 수 있는 분\r\n• 복잡한 운영 정책과 예외 케이스를 구조화하여 사용자와 운영자 모두에게 명확한 서비스로 설계할 수 있는 분\r\n• 서비스가 실제 현장에서 어떻게 사용되는지 끝까지 확인하고, VOC와 운영 이슈를 바탕으로 지속적으로 개선하는 태도를 가진 분\r\n\r\n근무조건\r\n• 고용형태 : 정규직 \r\n• 급여 : 면접 후 결정 \r\n\r\n채용절차\r\n• 제출서류 : 사람인 온라인 이력서, 경력기술서, (선택) 프로젝트·자동화 코드·CI/CD 구성 등 포트폴리오\r\n• 접수방법 : 사람인 입사지원 \r\n• 전형절차 : 서류전형 → 면접 → 최종합격\r\n\r\n별도 요청 사항\r\n• 경력기술서\r\n• 포트폴리오 선택 제출: 직접 기획한 서비스/기능의 문제 정의, 기획 범위, 본인 역할, 산출물, 출시 결과, 운영 개선 경험이 드러나는 자료",
+  "newcomer": false,
+  "minCareer": 5,
+  "maxCareer": 8,
+  "publishedAt": "2026-07-28 00:00:00",
+  "closedAt": "2026-08-26 23:59:59",
+  "location": "서울 강남구 삼성로434, 지하2층,14층,15층 )",
+  "tags": [
+   {
+    "id": "com_151",
+    "name": "매출액 500억 기업",
+    "emoticon": "sales"
+   },
+   {
+    "id": "292",
+    "name": "장기근속 포상",
+    "emoticon": "welfare"
+   },
+   {
+    "id": "com_117",
+    "name": "스틱스페셜시츄에이션쥬얼 계열사",
+    "emoticon": "scale"
+   }
+  ],
+  "serialNumber": "2208837259",
+  "companyUrl": "",
+  "alwaysOpen": false,
+  "education": 0,
+  "educationName": "무관",
+  "workingPlaces": [
+   {
+    "address": "서울 강남구 삼성로434, 지하2층,14층,15층 )",
+    "domestic": false
+   }
+  ],
+  "jobCategories": [
+   {
+    "id": 12,
+    "name": "개발 PM"
+   }
+  ],
+  "invisible": false,
+  "status": 0
+ }
+}
