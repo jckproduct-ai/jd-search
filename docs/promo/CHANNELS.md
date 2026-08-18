@@ -63,7 +63,7 @@ awesome 리스트가 홍보의 출발점이 아니라 도착점이다. hesreally
 |---|---|
 | 재무 확보율 48.9% (사람인 135곳) · 50.0% (원티드 30곳) · 62.2% (표본 98곳) | README 재무 데이터 표 |
 | 마감일 없는 공고 22% (사람인 40건 중 9건) | README |
-| 회귀 테스트 562건, 네트워크·키 없이 통과 | `node skills/jd-search/scripts/test/run.mjs` 2026-08-18 실행 |
+| 회귀 테스트 668건, 네트워크·키 없이 통과 | `node skills/jd-search/scripts/test/run.mjs` 2026-08-18 실행 |
 | 의존성 0개 · 필수 키 1개 | `package.json` · README |
 | 통근 시간 실측 미구현 | README. **홍보문에도 반드시 함께 적는다** |
 

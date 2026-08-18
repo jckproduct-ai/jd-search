@@ -128,6 +128,27 @@ export async function runIntegration(ok, eq) {
     ok(fs.readFileSync(path.join(dir, 'out', 'report.html'), 'utf8').includes('면접 진행중'),
       '  --with-status 를 주면 지원 이력이 들어간다');
 
+    // ── 겹침·공백도 같은 계약이다 — 겹친 낱말은 이력서에 무엇이 적혔는지를 드러낸다.
+    fs.writeFileSync(path.join(dir, 'state', 'fit.json'), JSON.stringify({
+      updatedAt: '2026-08-18T00:00:00.000Z',
+      byId: { 'wanted:1': { verdict: 'ok', overlap: ['핀테크'], gap: ['헬스케어'], conditions: [], reason: null } },
+    }));
+    run(home, 'render.mjs');
+    const noFit = fs.readFileSync(path.join(dir, 'out', 'report.html'), 'utf8');
+    ok(!noFit.includes('핀테크'),
+      '  🔴 겹침 낱말은 리포트에 기본으로 나가지 않는다 (이력서 내용이 공유 파일에 실린다)');
+
+    run(home, 'render.mjs', ['--with-fit']);
+    const withFit = fs.readFileSync(path.join(dir, 'out', 'report.html'), 'utf8');
+    ok(withFit.includes('핀테크'), '  --with-fit 을 주면 겹침이 들어간다');
+    ok(withFit.includes('헬스케어'), '  공백도 함께 들어간다');
+    ok(!/fit\s*\d+점|\d+%\s*일치/.test(withFit), '  🔴 리포트에 궁합 점수 표기가 없다');
+    // 🔴 배선이 끊기면 lib 의 정렬·요약이 죽은 코드가 되고, 화면은 제 나름의 순서를 갖는다.
+    //    그러면 못 읽은 공고가 조용히 바닥으로 밀리는데 테스트는 통과한다 — 여기서 잠근다.
+    ok(/"fitRank"\s*:/.test(withFit), '  🔴 정렬 순서를 lib 에서 받아 싣는다 (화면이 따로 정하지 않는다)');
+    ok(withFit.includes('겹침 먼저'), '  겹침 먼저 정렬 옵션이 있다');
+    ok(/"fitLine"\s*:\s*"겹침 1/.test(withFit), '  요약 문구를 lib 의 fitSummary 가 만든다');
+
     fs.rmSync(home, { recursive: true, force: true });
   }
 

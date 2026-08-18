@@ -22,6 +22,7 @@ import { mergeVerdicts } from './lib/merge.mjs';
 import { EXPERIENCE_TAG_LABEL } from './lib/experience.mjs';
 import { summarizeRuns, runsOf, BOARD_LABEL, IMPLEMENTED_BOARDS } from './lib/runstatus.mjs';
 import { investmentLine } from './lib/investment.mjs';
+import { fitSummary, FIT_SORT_RANK } from './lib/fit.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -41,6 +42,18 @@ const dropped = readJson(statePath(profile, 'dropped.json'), { byReason: {}, dro
 //    실수로 새는 쪽이 실수로 빠지는 쪽보다 훨씬 비싸다 → 넣으려면 명시적으로 요구해야 한다.
 const withStatus = argv.includes('--with-status');
 const apps = withStatus ? readJson(statePath(profile, 'applications.json'), {}) : {};
+
+// 🔴 겹침·공백도 같은 이유로 기본에서 뺀다. 겹친 낱말은 **이력서에 무엇이 적혀 있는지**를
+//    그대로 드러낸다 — report.html 은 남에게 보내는 파일이고, 이력서 내용은 리포트에
+//    넣지 않기로 되어 있다(「절대 하지 말 것」 6번). 손에 들고 보는 화면은 serve 가 맡는다.
+// 🔴 `fit.enabled: false` 면 옛 fit.json 이 남아 있어도 싣지 않는다.
+//    껐는데 화면에 계속 보이면 그건 끈 게 아니다 — 사용자는 지운 줄 알고 공유해 버린다.
+const fitOn = profile.fit?.enabled !== false;
+const withFit = argv.includes('--with-fit') && fitOn;
+const fitStore = withFit ? readJson(statePath(profile, 'fit.json'), { byId: {} }) : { byId: {} };
+if (argv.includes('--with-fit') && !fitOn) {
+  console.log('profile.yml 의 fit.enabled 가 false 라 겹침·공백을 싣지 않았습니다.');
+}
 
 const TAG_LABEL = { remote: '풀리모트', hybrid: '하이브리드', ...EXPERIENCE_TAG_LABEL, watchlist: '관심회사' };
 const REASON_LABEL = {
@@ -79,6 +92,10 @@ for (const [key, p] of Object.entries(postings)) {
     annualFrom: p.annualFrom, collectedAt: p.collectedAt,
     // 🔴 합치지 않은 중복 후보는 사용자에게 알린다. 조용히 두면 같은 자리에 두 번 지원한다.
     dupHint: p.mergeCandidates?.length ? p.mergeCandidates.length : 0,
+    // 🔴 겹침·공백은 **센 낱말**이다. 비율·점수로 바꾸지 않는다.
+    //    verdict 가 ok 가 아니면 못 읽었다는 뜻이고, 그 사유를 그대로 싣는다.
+    fit: fitStore.byId?.[key] ?? null,
+    fitLine: fitSummary(fitStore.byId?.[key] ?? null),
     tags: [
       ...(g.tags ?? []),
       ...(g.verdict === 'hold' ? ['근무지 미확인'] : []),
@@ -137,6 +154,9 @@ const data = {
   criteria: { regions: profile.location?.regions ?? [] },
   baseline: fin.baseline ? { company: fin.baseline.company, year: fin.baseline.year } : null,
   gradeLabels: GRADE_LABEL, tagLabels: TAG_LABEL, reasonLabels: REASON_LABEL, boardLabels: BOARD_LABEL,
+  // 🔴 정렬 순서를 화면이 따로 정하지 않게 lib 것을 그대로 넘긴다.
+  //    두 곳에 적으면 한쪽만 고쳐져 못 읽은 공고가 조용히 바닥으로 밀린다.
+  fitRank: FIT_SORT_RANK,
   stats: [
     { label: '본 목록', value: String(rows.length) },
     { label: '살아있음', value: String(rows.filter(r => r.status !== 'closed').length) },

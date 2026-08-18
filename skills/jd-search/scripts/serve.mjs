@@ -36,6 +36,7 @@ import { parsePostingUrl } from './lib/board_url.mjs';
 import { summarizeRuns, runsOf, BOARD_LABEL, IMPLEMENTED_BOARDS } from './lib/runstatus.mjs';
 import { ADDABLE_BOARDS } from './lib/board_adapters.mjs';
 import { investmentLine } from './lib/investment.mjs';
+import { fitSummary, FIT_SORT_RANK } from './lib/fit.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -61,6 +62,12 @@ function buildData() {
   const dropped = readJson(statePath(profile, 'dropped.json'), { byReason: {}, dropped: [] });
   const apps = readJson(statePath(profile, 'applications.json'), {});
   const hidden = readJson(statePath(profile, 'hidden.json'), { hidden: {} }).hidden ?? {};
+  // 🔴 겹침·공백은 **여기서는 늘 보여 준다.** 이 화면은 127.0.0.1 전용이라 남에게 안 나간다.
+  //    남에게 보내는 report.html 쪽은 --with-fit 을 명시해야만 실린다 (render.mjs 참조).
+  // 🔴 껐으면 여기서도 안 보인다. 화면마다 다르게 굴면 무엇이 켜져 있는지 알 수 없다.
+  const fitStore = profile.fit?.enabled === false
+    ? { byId: {} }
+    : readJson(statePath(profile, 'fit.json'), { byId: {} });
   const postings = store.postings ?? {};
 
   const rows = [];
@@ -80,6 +87,8 @@ function buildData() {
       status: p.status, dueTime: p.dueTime, dueKindLabel: DUE_KIND_LABEL[p.dueKind] ?? null,
       stale: Boolean(p.stale), annualFrom: p.annualFrom, collectedAt: p.collectedAt,
       dupHint: p.mergeCandidates?.length ?? 0,
+      fit: fitStore.byId?.[key] ?? null,
+      fitLine: fitSummary(fitStore.byId?.[key] ?? null),
       dupPairs: (p.mergeCandidates ?? []).map(c => ({
         key: c.key, score: c.score, why: c.why,
         title: postings[c.key]?.title ?? '(없음)', company: postings[c.key]?.company?.name ?? '',
@@ -129,6 +138,7 @@ function buildData() {
     gradeLabels: GRADE_LABEL, boardLabels: BOARD_LABEL,
     addableBoards: ADDABLE_BOARDS.map(b => BOARD_LABEL[b] ?? b),
     tagLabels: { remote: '풀리모트', hybrid: '하이브리드', ...EXPERIENCE_TAG_LABEL, watchlist: '관심회사' },
+    fitRank: FIT_SORT_RANK,   // 🔴 리포트와 같은 순서 — lib 하나에서만 정한다
     reasonLabels: {
       outOfRegion: '희망 지역 밖', denyRegion: '제외 지역', blocklist: '제외 회사',
       excludeRole: '제외 직무 키워드', excludeIndustry: '제외 업종',

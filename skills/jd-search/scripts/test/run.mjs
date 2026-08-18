@@ -8,6 +8,7 @@
  * 사용자는 잘못된 회사 재무를 보고 지원 결정을 내리거나(오매칭), 흑자·적자가 뒤집힌 등급을 본다.
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,6 +38,10 @@ import { isSamePosting, planMerge, pickPrimary, regionKeys, mergeVerdicts, norma
 import { gradeCompany, compareToBaseline, interviewQuestions } from '../lib/grade.mjs';
 import { investmentEvents, summarizeInvestment, investmentLine, monthsSince } from '../lib/investment.mjs';
 import { isCacheFresh, expectedFiscalYear } from '../lib/freshness.mjs';
+import {
+  loadDictionary, flattenDictionary, needleHit, termsFromText, judgeFit,
+  fitSummary, fitSortKey, MIN_BODY_CHARS, MATCH_CATEGORIES, normalizeTerms,
+} from '../lib/fit.mjs';
 import { parseYaml } from '../lib/yaml.mjs';
 import { requireSourceEnabled, SOURCE_MODES } from '../lib/io.mjs';
 import { experienceTags, EXPERIENCE_TAG_LABEL } from '../lib/experience.mjs';
@@ -46,6 +51,7 @@ import { runIntegration } from './integration.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const fx = f => fs.readFileSync(path.join(HERE, 'fixtures', f), 'utf8');
+const SCRIPTS = path.dirname(HERE);   // scripts/ — 템플릿·SKILL.md 회귀에 쓴다
 
 let pass = 0; const fails = [];
 function ok(cond, label, extra) {
@@ -1139,6 +1145,296 @@ group('저장한 HTML → 공고 주소', () => {
   ok(canAdd('jumpit') && canAdd('incruit') && canAdd('jobkorea'), '  주소로 넣을 수 있는 보드');
   ok(!canAdd('linkedin'), '  🔴 링크드인은 주소를 알아도 받지 않는다');
   eq(ADDABLE_BOARDS.length, 5, '  주소로 넣을 수 있는 보드는 5개');
+});
+
+// ══ 겹침·공백 — 점수를 만들지 않는다는 약속을 코드로 못박는다 ═════════════════
+group('겹침·공백 (fit)', () => {
+  const dict = loadDictionary();
+
+  // 사전이 실제로 읽히는가 — 사전이 비면 모든 공고가 조용히 `thin` 이 된다.
+  ok(dict.length > 30, '  사전이 읽힌다');
+  ok(dict.some(d => d.category === 'domain'), '  도메인 분류가 있다');
+  ok(dict.some(d => d.category === 'condition'), '  근무조건 분류가 있다');
+
+  // 🔴 영문 약어 오탐 — PM 이 PMO 에 걸리면 있지도 않은 겹침이 생긴다.
+  ok(needleHit('QA 엔지니어를 찾습니다', 'QA'), '  QA 를 찾는다');
+  ok(!needleHit('QAing 중입니다', 'QA'), '  🔴 QAing 은 QA 가 아니다');
+  ok(!needleHit('SQLite 경험', 'SQL'), '  🔴 SQLite 는 SQL 이 아니다');
+  ok(needleHit('SQL 쿼리 작성', 'SQL'), '  SQL 은 찾는다');
+  ok(needleHit('B2B SaaS 제품', 'B2B SaaS'), '  긴 낱말은 부분일치로 찾는다');
+
+  // 별칭 — 회사마다 다르게 쓴다.
+  const t1 = termsFromText('이커머스 플랫폼의 전환율을 개선했습니다', dict);
+  ok(t1.some(t => t.term === '커머스'), '  별칭(이커머스)으로 커머스를 찾는다');
+  ok(t1.some(t => t.term === '퍼널 분석'), '  별칭(전환율)으로 퍼널 분석을 찾는다');
+
+  // 🔴 이력서와 JD 를 같은 함수로 훑는다 — 규칙이 갈리면 겹침이 잡음이 된다.
+  const sameText = 'B2B SaaS 커머스 퍼널 분석';
+  eq(JSON.stringify(termsFromText(sameText, dict)),
+     JSON.stringify(termsFromText(sameText, dict)),
+     '  같은 본문은 같은 결과를 낸다');
+
+  // 근무조건은 겹침·공백에서 빠진다 — "재택 공백" 은 사실이 아니라 오해다.
+  const cond = termsFromText('재택근무 가능, 스톡옵션 지급', dict);
+  eq(cond.length, 0, '  🔴 근무조건은 기본 분류에서 빠진다');
+  ok(termsFromText('재택근무 가능', dict, ['condition']).length > 0, '  조건만 따로 뽑으면 나온다');
+  ok(!MATCH_CATEGORIES.includes('condition'), '  🔴 condition 은 대조 분류가 아니다');
+
+  const jd = [
+    '[담당업무] 서비스기획자를 찾습니다.',
+    'B2B SaaS 제품의 요구사항 정의와 화면 설계를 맡습니다.',
+    '신규 기능의 정책을 정의하고 릴리즈까지 책임집니다.',
+    '[자격요건] 헬스케어 도메인 이해가 있으면 좋습니다.',
+    '전환율 개선 경험을 우대합니다. 유관부서와의 조율이 잦습니다.',
+    '[근무조건] 재택근무 가능합니다. 주 2회 출근합니다.',
+  ].join('\n');
+  const mine = ['B2B SaaS', '화면 설계', '퍼널 분석', '이해관계자 조율'];
+
+  const v = judgeFit({ jdText: jd, jdKind: 'text', myTerms: mine, dictionary: dict });
+  eq(v.verdict, 'ok', '  읽을 수 있는 본문은 ok');
+  ok(v.overlap.includes('B2B SaaS'), '  겹침에 B2B SaaS 가 든다');
+  ok(v.overlap.includes('화면 설계'), '  겹침에 화면 설계가 든다');
+  ok(v.gap.includes('헬스케어'), '  🔴 JD 에 있고 이력서에 없으면 공백이다');
+  ok(!v.gap.includes('B2B SaaS'), '  겹친 낱말은 공백에 안 든다');
+  ok(v.conditions.includes('재택·리모트'), '  근무조건은 따로 실린다');
+  ok(!v.overlap.includes('재택·리모트') && !v.gap.includes('재택·리모트'),
+     '  🔴 근무조건은 겹침에도 공백에도 안 든다');
+
+  // ── 🔴 못 읽은 것과 안 맞는 것을 가른다 ──────────────────────────────────
+  const img = judgeFit({ jdText: '', jdKind: 'imageOnly', myTerms: mine, dictionary: dict });
+  eq(img.verdict, 'unknown', '  🔴 본문이 이미지뿐이면 unknown');
+  eq(img.overlap.length, 0, '  unknown 은 겹침을 세지 않는다');
+  ok(/이미지/.test(img.reason), '  unknown 은 사유를 남긴다');
+
+  const empty = judgeFit({ jdText: '', jdKind: 'empty', myTerms: mine, dictionary: dict });
+  eq(empty.verdict, 'unknown', '  본문이 비면 unknown');
+
+  const shortJd = judgeFit({ jdText: '기획자 채용', jdKind: 'text', myTerms: mine, dictionary: dict });
+  eq(shortJd.verdict, 'unknown', `  🔴 ${MIN_BODY_CHARS}자 미만은 대조하지 않는다`);
+
+  const thin = judgeFit({
+    jdText: '용접 기능사 자격 보유자를 찾습니다. '.repeat(12),
+    jdKind: 'text', myTerms: mine, dictionary: dict,
+  });
+  eq(thin.verdict, 'thin', '  🔴 본문은 읽었으나 사전 밖이면 thin (겹침 0 이 아니다)');
+  ok(/사전/.test(thin.reason), '  thin 은 사전을 늘리라고 말한다');
+
+  // 🔴 정렬 — unknown 을 맨 아래로 보내면 이미지 공고가 영영 안 보인다.
+  const rank = [
+    { verdict: 'thin', overlap: [] },
+    { verdict: 'unknown', overlap: [] },
+    { verdict: 'ok', overlap: ['a'] },
+  ].sort((a, b) => { const x = fitSortKey(a), y = fitSortKey(b); return x[0] - y[0] || x[1] - y[1]; });
+  eq(rank[0].verdict, 'ok', '  ok 가 먼저');
+  eq(rank[1].verdict, 'unknown', '  🔴 unknown 은 thin 보다 위 — 맨 아래로 밀지 않는다');
+
+  // 🔴 요약 문구에 비율·점수가 섞이지 않는다 — 이 저장소의 공개 약속이다.
+  const line = fitSummary(v);
+  ok(/겹침 \d+/.test(line), '  요약은 센 낱말로 적는다');
+  ok(!/%/.test(line), '  🔴 요약에 % 가 없다');
+  ok(!/\d+점/.test(line), '  🔴 요약에 점수가 없다');
+  eq(fitSummary(img), img.reason, '  unknown 요약은 사유 그대로');
+
+  // 빈 사전 방어 — version 같은 스칼라 칸을 항목으로 읽지 않는다.
+  eq(flattenDictionary({ version: 1, domain: [{ term: 'X' }] }).length, 1, '  스칼라 칸은 건너뛴다');
+  eq(flattenDictionary({}).length, 0, '  빈 사전은 0건');
+});
+
+// ══ 외부 검증(codex) 지적 6건 — 전부 실제 결함이었다 ══════════════════════════
+group('겹침·공백 — 외부 검증 지적 6건', () => {
+  const dict = loadDictionary();
+
+  // 1. 근무조건이 판정에는 있는데 화면에 없던 자리 — 템플릿이 실제로 그리는지 본다.
+  const tpl = fs.readFileSync(path.join(SCRIPTS, 'templates', 'report.html'), 'utf8');
+  ok(/r\.fit\.conditions/.test(tpl), '  🔴 근무조건을 화면이 그린다 (판정 셋 중 하나가 사라지던 자리)');
+
+  // 2. profile.fit.terms 가 목록이 아닐 때 — 문자열도 .length 가 있어 빈 값 검사를 통과한다.
+  let threw = null;
+  try { judgeFit({ jdText: 'x'.repeat(200), jdKind: 'text', myTerms: 'SQL', dictionary: dict }); }
+  catch (e) { threw = String(e.message); }
+  ok(threw, '  🔴 fit.terms 가 문자열이면 멈춘다 (TypeError 로 죽지 않는다)');
+  ok(/목록이 아닙니다/.test(threw ?? ''), '  무엇을 고쳐야 하는지 적힌 문장으로 멈춘다', threw);
+
+  // 3. 사전 별칭이 배열이 아닐 때 — 사용자가 손으로 고치는 파일이라 흔한 실수다.
+  const scalarAlias = flattenDictionary({ domain: [{ term: 'QA도메인', aliases: 'QA' }] });
+  eq(scalarAlias.length, 1, '  🔴 aliases 스칼라를 단일 별칭으로 받는다 (죽지 않는다)');
+  eq(scalarAlias[0].needles.length, 2, '  term + 별칭 1개');
+  eq(flattenDictionary({ domain: ['문자열항목', null, 42] }).length, 0, '  항목 모양이 아니면 건너뛴다');
+
+  // 4. 🔴 사전이 비면 멈춘다 — 안 그러면 정상 JD 가 전부 thin 이 되어 "사전 밖"으로 찍힌다.
+  const tmp = path.join(os.tmpdir(), `jd-fit-empty-${process.pid}.yml`);
+  fs.writeFileSync(tmp, 'version: 1\n');
+  let dictErr = null;
+  try { loadDictionary(tmp); } catch (e) { dictErr = String(e.message); }
+  ok(dictErr && /사전이 비었습니다/.test(dictErr), '  🔴 빈 사전은 조용히 통과하지 않는다', dictErr);
+  fs.writeFileSync(tmp, 'domain:\n  - term: X\n');
+  dictErr = null;
+  try { loadDictionary(tmp); } catch (e) { dictErr = String(e.message); }
+  ok(dictErr && /얕습니다/.test(dictErr), '  분류가 빠져도 멈춘다', dictErr);
+  // 🔴 분류마다 한 줄씩만 있는 뼈대 파일도 막는다 — "분류가 있기만 하면 통과" 로는
+  //    전 공고가 thin 이 되는 침묵 실패가 그대로 돌아온다.
+  fs.writeFileSync(tmp, 'domain:\n  - term: A\nskill:\n  - term: B\ntool:\n  - term: C\n');
+  dictErr = null;
+  try { loadDictionary(tmp); } catch (e) { dictErr = String(e.message); }
+  ok(dictErr && /얕습니다/.test(dictErr), '  🔴 분류마다 한 줄뿐인 뼈대 사전도 막는다', dictErr);
+  fs.rmSync(tmp, { force: true });
+
+  // 5. 🔴 낱말 경계 — 길이 제한이 2~4글자에만 걸려 있어 생기던 오탐.
+  ok(!needleHit('Reactive programming 경험', 'React'), '  🔴 Reactive 는 React 가 아니다');
+  ok(needleHit('React 로 개발합니다', 'React'), '  React 는 찾는다');
+  ok(needleHit('React를 씁니다', 'React'), '  한글 조사가 붙어도 찾는다');
+  ok(!needleHit('Jirachi', 'Jira'), '  🔴 Jirachi 는 Jira 가 아니다');
+  ok(!needleHit('NodeXjs 환경', 'Node.js'), '  🔴 정규식 점이 아무 글자나 받지 않는다');
+  ok(needleHit('Node.js 환경', 'Node.js'), '  Node.js 는 찾는다');
+
+  // 5-b. 문맥 없이 뜻이 갈리던 한글 별칭이 사전에서 빠졌는가.
+  const needles = dict.flatMap(d => d.needles);
+  ok(!needles.includes('인사'), '  🔴 "인사" 별칭 제거 ("인사드립니다" 가 HR 로 걸리던 자리)');
+  ok(!needles.includes('인터뷰'), '  🔴 "인터뷰" 별칭 제거 ("면접 인터뷰" 가 사용자 리서치로 걸리던 자리)');
+  ok(!needles.includes('협업'), '  🔴 "협업" 별칭 제거 (거의 모든 공고에 있어 신호가 죽던 자리)');
+  const hr = termsFromText('좋은 분들과 함께하고 싶습니다. 인사드립니다.', dict);
+  ok(!hr.some(t => t.term === 'HR'), '  🔴 인사말이 HR 도메인으로 걸리지 않는다');
+  const ut = termsFromText('서류 합격자에 한해 면접 인터뷰 일정을 안내드립니다.', dict);
+  ok(!ut.some(t => t.term === '사용자 리서치'), '  🔴 면접 안내가 사용자 리서치로 걸리지 않는다');
+  ok(termsFromText('사용자 인터뷰 12건을 진행했습니다', dict).some(t => t.term === '사용자 리서치'),
+     '  좁힌 별칭은 여전히 찾는다');
+
+  // 6. 온보딩 문구가 실제 절차보다 앞서 나가지 않는가 (문서 회귀).
+  const skill = fs.readFileSync(path.join(SCRIPTS, '..', 'SKILL.md'), 'utf8');
+  ok(!/묻는 것은 지역 하나뿐/.test(skill),
+     '  🔴 "지역만 묻는다" 고 적지 않는다 — 연차·주소·원격도 실제로 묻는다');
+  ok(/확인 화면 1회 \+ 위치 1회/.test(skill), '  실제 절차대로 적는다');
+});
+
+// ══ 외부 검증 2차 — 1차 수정이 만든 회귀 5건 ═════════════════════════════════
+group('겹침·공백 — 외부 검증 2차 5건', () => {
+  const dict = loadDictionary();
+
+  // 1. 🔴 thin 공고의 근무조건이 화면에서 사라지던 자리.
+  //    재택 여부는 역량이 겹쳤는지와 아무 상관이 없다.
+  const tpl = fs.readFileSync(path.join(SCRIPTS, 'templates', 'report.html'), 'utf8');
+  const okBlock = tpl.slice(tpl.indexOf("if (r.fit.verdict === 'ok')"), tpl.indexOf('box.append(f);'));
+  const condIdx = okBlock.indexOf('r.fit.conditions');
+  const elseIdx = okBlock.indexOf('} else {');
+  ok(condIdx > elseIdx && elseIdx !== -1,
+     '  🔴 근무조건을 ok 분기 밖에서 그린다 (thin 공고도 재택 정보를 잃지 않는다)');
+
+  const thinCond = judgeFit({
+    jdText: '용접 기능사 자격 보유자를 찾습니다. 재택근무 가능합니다. '.repeat(8),
+    jdKind: 'text', myTerms: ['SQL'], dictionary: dict,
+  });
+  eq(thinCond.verdict, 'thin', '  사전 밖 공고');
+  ok(thinCond.conditions.includes('재택·리모트'), '  🔴 thin 이어도 근무조건은 판정에 남는다');
+
+  // 2. 🔴 term 이 객체면 "[object Object]" 가 낱말이 되어 사전 검증을 통과하던 자리.
+  //    분류는 다 있는데 아무것도 안 걸려 전 공고가 thin 이 된다 — 막으려던 침묵 실패 그 자체다.
+  eq(flattenDictionary({ domain: [{ term: { bad: 1 } }] }).length, 0, '  🔴 객체 term 은 낱말이 아니다');
+  eq(flattenDictionary({ domain: [{ term: ['A', 'B'] }] }).length, 0, '  배열 term 도 버린다');
+  eq(flattenDictionary({ domain: [{ term: 'X', aliases: [{ bad: 1 }, 'Y'] }] })[0].needles.length, 2,
+     '  별칭 안의 객체만 골라 버린다 (X + Y)');
+  eq(flattenDictionary({ domain: [{ term: 5 }] })[0].term, '5', '  숫자는 낱말로 받는다');
+
+  const tmp = path.join(os.tmpdir(), `jd-fit-obj-${process.pid}.yml`);
+  fs.writeFileSync(tmp, 'domain:\n  - term:\n      bad: 1\nskill:\n  - term:\n      bad: 1\ntool:\n  - term:\n      bad: 1\n');
+  let err = null;
+  try { loadDictionary(tmp); } catch (e) { err = String(e.message); }
+  ok(err && /사전이 비었습니다/.test(err), '  🔴 객체 term 만 있는 사전은 멈춘다', err);
+  fs.rmSync(tmp, { force: true });
+
+  // 3. 🔴 ASCII 판별을 문자 목록으로 열거해 `>` 를 빠뜨리던 자리.
+  ok(!needleHit('10->1 로 줄였습니다', '0->1'), '  🔴 10->1 안에서 0->1 이 걸리지 않는다');
+  ok(needleHit('0->1 경험', '0->1'), '  0->1 은 찾는다');
+  ok(needleHit('0 to 1 경험', '0 to 1'), '  0 to 1 도 찾는다');
+  // 한글이 섞인 낱말은 경계가 없어 부분일치로 둔다 — 규칙이 바뀌지 않았는지 확인한다.
+  ok(needleHit('0→1 출시를 맡았습니다', '0→1 출시'), '  한글 혼합 낱말도 찾는다');
+  // 🔴 낱말 전체가 ASCII 여야 경계를 건다는 규칙이었을 때 뚫리던 자리.
+  //    앞은 숫자, 뒤는 한글이라 **앞쪽 경계만** 걸어야 한다.
+  ok(!needleHit('10→1 출시 프로젝트', '0→1 출시'), '  🔴 10→1 안에서 0→1 이 걸리지 않는다');
+  ok(needleHit('운영·CS 개선 경험', '운영·CS 개선'), '  양끝이 한글이면 부분일치 그대로');
+
+  // 4. 재현율 보강 — 좁히느라 놓쳤던 현실 표현을 되찾았는가.
+  ok(termsFromText('인사 운영 업무를 담당합니다', dict).some(t => t.term === 'HR'), '  "인사 운영" 을 찾는다');
+  ok(termsFromText('유관부서와 조율이 잦습니다', dict).some(t => t.term === '이해관계자 조율'), '  "유관부서" 를 찾는다');
+  // 🔴 되찾으려다 도로 뺀 것들 — 정밀도를 잃으면 걸린 낱말이 근거 구실을 못 한다.
+  ok(!termsFromText('기타 부서 지원 업무', dict).some(t => t.term === '이해관계자 조율'),
+     '  🔴 "기타 부서" 가 조율로 걸리지 않는다');
+  ok(!termsFromText('인사 담당자와 협업합니다', dict).some(t => t.term === 'HR'),
+     '  🔴 "인사 담당자와 협업" 은 HR 직무가 아니다');
+  // 되찾으면서 오탐이 돌아오지는 않았는가.
+  ok(!termsFromText('좋은 분들과 함께하고 싶습니다. 인사드립니다.', dict).some(t => t.term === 'HR'),
+     '  🔴 인사말은 여전히 안 걸린다');
+});
+
+// ══ 외부 검증 4차 — 겹침이 공백으로 뒤집히던 자리 ═══════════════════════════
+group('겹침·공백 — 외부 검증 4차', () => {
+  const dict = loadDictionary();
+
+  // 🔴 가장 나쁜 결함이었다. 사용자는 `React` 라고 적는데 사전은 `JavaScript` 로 모아 둔다.
+  //    맞추지 않으면 JD 에도 이력서에도 있는 낱말이 **공백**으로 나온다 —
+  //    겹치는데 안 겹친다고 말하는 것이라, 사용자가 그 공고를 스스로 접는다.
+  const jd = '프론트엔드 개발자를 찾습니다. React 와 TypeScript 로 화면을 만듭니다. '.repeat(4);
+  const byAlias = judgeFit({ jdText: jd, jdKind: 'text', myTerms: ['React'], dictionary: dict });
+  ok(byAlias.overlap.includes('JavaScript'), '  🔴 별칭으로 적어도 겹침으로 잡는다');
+  ok(!byAlias.gap.includes('JavaScript'), '  🔴 겹친 낱말이 공백으로 뒤집히지 않는다');
+
+  const byCanonical = judgeFit({ jdText: jd, jdKind: 'text', myTerms: ['JavaScript'], dictionary: dict });
+  eq(JSON.stringify(byCanonical.overlap), JSON.stringify(byAlias.overlap),
+     '  대표 이름으로 적든 별칭으로 적든 결과가 같다');
+
+  eq(normalizeTerms(['  react  '], dict).terms.has('JavaScript'), true, '  앞뒤 공백·대소문자 무시');
+
+  // 🔴 사전에 없는 낱말은 영영 안 걸린다 — 조용히 두지 않고 돌려준다.
+  const unk = normalizeTerms(['용접', 'React'], dict);
+  eq(unk.unknown.length, 1, '  사전 밖 낱말을 돌려준다');
+  eq(unk.unknown[0], '용접', '  어느 낱말인지 알려준다');
+
+  // C 회귀 — 앞쪽 경계를 걸면서 놓쳤던 현실 표기.
+  ok(termsFromText('OpenAPI 연동 경험', dict).some(t => t.term === '외부 연동'), '  OpenAPI 연동을 찾는다');
+  ok(termsFromText('REST API 설계 경험', dict).some(t => t.term === '외부 연동'), '  REST API 도 찾는다');
+
+  // 🔴 껐으면 화면 둘 다에서 안 보여야 한다 — 화면마다 다르면 무엇이 켜졌는지 알 수 없다.
+  const rend = fs.readFileSync(path.join(SCRIPTS, 'render.mjs'), 'utf8');
+  const srv = fs.readFileSync(path.join(SCRIPTS, 'serve.mjs'), 'utf8');
+  ok(/fit\?\.enabled !== false/.test(rend), '  🔴 render 가 fit.enabled 를 본다');
+  ok(/fit\?\.enabled === false/.test(srv), '  🔴 serve 도 fit.enabled 를 본다');
+});
+
+// ══ 구조 불변식 — 이 하나가 지켜지면 위 버그 부류가 통째로 안 생긴다 ═══════════
+group('겹침·공백 — 매칭 경로는 하나다', () => {
+  const dict = loadDictionary();
+
+  // 🔴 내 낱말·JD·이력서가 **같은 함수**로 걸러지는가.
+  //    예전에는 내 낱말만 별도 Map 으로 맞췄고, 그래서 규칙이 갈릴 때마다
+  //    겹침이 공백으로 뒤집히거나 대소문자가 어긋났다. 경로가 하나면 그 부류가 없다.
+  const samples = ['React', '  react  ', 'B2B SaaS', 'OpenAPI', '전환율', '용접'];
+  for (const x of samples) {
+    const viaText = termsFromText(x, dict).map(t => t.term).sort();
+    const viaTerms = [...normalizeTerms([x], dict).terms].sort();
+    eq(JSON.stringify(viaTerms), JSON.stringify(viaText), `  "${x}" — 두 경로가 같은 답을 낸다`);
+  }
+
+  // 🔴 별칭 하나를 두 항목이 나눠 가져도 양쪽이 똑같이 둘 다 잡는가.
+  //    사전은 사람이 손으로 고치는 파일이라 이런 겹침이 언제든 생긴다.
+  const shared = flattenDictionary({
+    domain: [{ term: 'A도메인', aliases: ['공용낱말'] }, { term: 'B도메인', aliases: ['공용낱말'] }],
+    skill: [{ term: 'S1' }, { term: 'S2' }, { term: 'S3' }],
+    tool: [{ term: 'T1' }, { term: 'T2' }, { term: 'T3' }],
+  });
+  const jdSide = termsFromText('공용낱말 경험', shared).map(t => t.term).sort();
+  const mySide = [...normalizeTerms(['공용낱말'], shared).terms].sort();
+  eq(JSON.stringify(mySide), JSON.stringify(jdSide), '  🔴 별칭이 겹쳐도 양쪽이 같은 답을 낸다');
+  eq(jdSide.length, 2, '  두 항목 모두 잡힌다');
+
+  // 겹침·공백이 이 불변식 위에서 뒤집히지 않는가.
+  const v = judgeFit({
+    jdText: '공용낱말 을 다룹니다. '.repeat(20), jdKind: 'text',
+    myTerms: ['공용낱말'], dictionary: shared,
+  });
+  eq(v.gap.length, 0, '  🔴 겹친 낱말이 공백으로 새지 않는다');
+  eq(v.overlap.length, 2, '  겹침으로 둘 다 잡힌다');
+
+  // dictionary 를 안 넘겨도 죽지 않는다 (공개 함수라 밖에서 부를 수 있다).
+  eq(normalizeTerms(['React']).unknown.length, 1, '  사전 없이 부르면 전부 사전 밖');
 });
 
 // ── 결과 ────────────────────────────────────────────────────────────────────

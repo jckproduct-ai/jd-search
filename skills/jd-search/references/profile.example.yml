@@ -146,4 +146,36 @@ finance:
 documents:
   resume: docs/resume.md          # 필수 — 검색 키워드의 뼈대
   career: docs/career.md          # 선택 — 도메인·프로젝트 정밀화
-  portfolio: docs/portfolio.md    # 선택 — 산업 태그 추정 + 보관 (v2 JD맞춤용)
+  portfolio: docs/portfolio.md    # 선택 — 산업 태그 추정 + 보관
+
+# ── 8. 제출 서류 — 포지션마다 요구가 다르다 ────────────────────────
+# 온보딩이 직군을 보고 채운다. 리포트 카드에 "이 자리는 뭘 내야 하는가"로 표시된다.
+# 🔴 이건 **준비 체크리스트지 필터가 아니다.** 포폴이 없다고 공고를 버리지 않는다.
+apply:
+  docs:
+    resume: required              # required | optional | none
+    career: required              # 경력기술서. 경력직 공고는 대체로 요구한다
+    portfolio: optional           # 🔴 직군에 따라 안 내도 되는 자리가 많다.
+                                  #    기본을 required 로 두면 없는 사람이 지원을 접는다
+  # 직군별로 다르면 여기서 덮어쓴다. target.roles 의 표기를 그대로 쓴다.
+  byRole:
+    UX 기획:
+      portfolio: required
+    프로덕트 오너:
+      portfolio: optional
+
+# ── 9. 겹침·공백 — 이력서와 JD 를 같은 사전으로 훑은 결과 ──────────
+# 🔴 **점수를 만들지 않는다.** "이 공고가 당신과 87% 맞습니다" 는 검증할 수 없다.
+#    여기서 나오는 것은 센 낱말뿐이다 — 겹친 낱말, JD 가 요구하는데 이력서에 없는 낱말.
+# 🔴 terms 는 `node scripts/fit.mjs --terms` 로 이력서에서 뽑아 **확인한 뒤** 넣는다.
+#    자동으로 채워 넣으면 사용자가 본 적 없는 낱말로 목록이 정렬된다.
+# 사전은 references/jd-terms.yml — 여기 없는 낱말은 겹침으로도 공백으로도 안 나온다.
+fit:
+  enabled: true
+  terms:
+    - B2B SaaS
+    - 커머스
+    - 0→1 출시
+    - 화면 설계
+    - 퍼널 분석
+    - 이해관계자 조율

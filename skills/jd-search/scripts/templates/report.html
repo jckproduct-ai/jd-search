@@ -55,6 +55,11 @@ h2.t a{color:inherit;text-decoration:none;border-bottom:1px solid var(--line)}
 h2.t a:hover{border-color:var(--accent)}
 .meta{color:var(--dim);font-size:12.5px;margin-top:5px;display:flex;flex-wrap:wrap;gap:4px 12px}
 .why{color:var(--dim);font-size:12.5px;margin-top:7px;padding-top:7px;border-top:1px dashed var(--line)}
+.fit{font-size:12.5px;margin-top:7px;padding-top:7px;border-top:1px dashed var(--line)}
+.fit .ov{color:var(--ink)}
+.fit .gp{color:var(--dim)}
+.fit .nr{color:var(--dim);font-style:italic}
+.fit .cd{color:var(--faint)}
 .approx{cursor:help;border-bottom:1px dotted var(--faint)}
 a.src{color:var(--dim);text-decoration:none;border-bottom:1px solid var(--line)}
 a.src:hover{color:var(--ink);border-color:var(--accent)}
@@ -97,6 +102,7 @@ details.q li{margin-bottom:4px}
     <select id="sort">
       <option value="grade">좋음 먼저</option>
       <option value="risk">위험 먼저</option>
+      <option value="fit" id="sortFit" hidden>겹침 먼저</option>
       <option value="recent">최신 수집순</option>
       <option value="company">회사명순</option>
       <option value="distance">직선거리순</option>
@@ -183,6 +189,8 @@ $('#board').onchange = e => { state.board = e.target.value; draw(); };
 
 $('#region').onchange = e => { state.region = e.target.value; draw(); };
 $('#sort').onchange = e => { state.sort = e.target.value; draw(); };
+// 겹침을 안 돌렸으면 정렬 옵션 자체를 감춘다 — 눌러도 아무 일 없는 항목을 두지 않는다.
+if (D.rows.some(r => r.fit)) $('#sortFit').hidden = false;
 $('#q').oninput = e => { state.q = e.target.value.trim().toLowerCase(); draw(); };
 const hc = $('#hideClosed');
 const toggleClosed = () => { state.hideClosed = !state.hideClosed; hc.setAttribute('aria-pressed', String(state.hideClosed)); draw(); };
@@ -204,6 +212,13 @@ function draw() {
     if (state.sort === 'risk') return (ORDER_RISK[a.grade] - ORDER_RISK[b.grade]) || a.company.localeCompare(b.company, 'ko');
     if (state.sort === 'company') return a.company.localeCompare(b.company, 'ko');
     if (state.sort === 'distance') return (a.straightKm ?? 9e9) - (b.straightKm ?? 9e9);
+    // 🔴 순서를 여기서 새로 정하지 않는다 — lib/fit.mjs 의 FIT_SORT_RANK 를 그대로 받아 쓴다.
+    //    두 곳에 적으면 한쪽만 고쳐져 못 읽은 공고가 조용히 바닥으로 밀린다.
+    if (state.sort === 'fit') {
+      const rk = f => (f ? (D.fitRank?.[f.verdict] ?? 3) : 3);
+      const ov = f => -((f?.overlap?.length) ?? 0);
+      return (rk(a.fit) - rk(b.fit)) || (ov(a.fit) - ov(b.fit)) || a.company.localeCompare(b.company, 'ko');
+    }
     return String(b.collectedAt ?? '').localeCompare(String(a.collectedAt ?? ''));
   });
 
@@ -238,6 +253,8 @@ function draw() {
     if (r.annualFrom != null) meta.append(el('span', null, r.annualFrom === 0 ? '경력 무관' : `경력 ${r.annualFrom}년+`));
     if (r.dueTime) meta.append(el('span', null, `마감 ${String(r.dueTime).slice(0, 10)}`));
     else if (r.dueKindLabel) meta.append(el('span', null, r.dueKindLabel));
+    // 🔴 문구는 lib/fit.mjs 의 fitSummary 가 만든다. 화면이 따로 만들면 % 가 슬며시 끼어든다.
+    if (r.fit?.verdict === 'ok' && r.fitLine) meta.append(el('span', null, r.fitLine));
     if (r.appStatus) meta.append(el('span', null, `진행: ${r.appStatus}`));
 
     // 🔴 같은 자리가 두 보드에 있으면 링크를 둘 다 싣는다. 한쪽이 먼저 내려가기 때문이다.
@@ -256,6 +273,24 @@ function draw() {
       const d = el('div', 'why');
       d.textContent = `이 회사에 제목이 비슷한 공고가 ${r.dupHint}건 더 있습니다 — 근거가 약해 합치지 않았습니다. 같은 자리인지 확인해 주십시오.`;
       box.append(d);
+    }
+
+    // 겹침·공백 — 이력서와 JD 를 **같은 사전**으로 훑어 센 낱말이다. 점수가 아니다.
+    // 🔴 못 읽은 공고(본문이 이미지뿐 등)는 "겹침 0" 이 아니라 그 사유를 적는다.
+    //    둘을 뭉개면 본문이 이미지인 공고가 최하위로 밀려 목록에서 조용히 사라진다.
+    if (r.fit) {
+      const f = el('div', 'fit');
+      if (r.fit.verdict === 'ok') {
+        if (r.fit.overlap?.length) f.append(el('div', 'ov', `겹침 ${r.fit.overlap.length} · ${r.fit.overlap.join(' · ')}`));
+        if (r.fit.gap?.length) f.append(el('div', 'gp', `공백 ${r.fit.gap.length} · ${r.fit.gap.join(' · ')}`));
+        if (!r.fit.overlap?.length && !r.fit.gap?.length) f.append(el('div', 'nr', '겹치는 낱말이 없습니다'));
+      } else {
+        f.append(el('div', 'nr', r.fit.reason));
+      }
+      // 🔴 근무조건은 **역량 매칭 성공 여부와 무관하게** 보여 준다.
+      //    ok 안에만 두면 "재택 가능하지만 사전에 걸린 역량 낱말은 없는" 공고에서 재택 정보가 사라진다.
+      if (r.fit.conditions?.length) f.append(el('div', 'cd', `근무조건 · ${r.fit.conditions.join(' · ')}`));
+      box.append(f);
     }
 
     if (r.reasons?.length) box.append(el('div', 'why', r.reasons.join(' · ')));

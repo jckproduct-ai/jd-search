@@ -23,7 +23,9 @@
 - **범위 밖은 애초에 목록에 없습니다.** 다닐 수 있는 범위를 리포트에 표시만 하는 게 아니라 수집 단계의 필터로 씁니다 (지금은 지역 조건 기준. 통근 시간 실측은 미구현)
 
 > **궁합 점수는 만들지 않습니다.** "이 공고가 당신과 87% 맞습니다" 같은 숫자는 검증할 수 없습니다.
-> 이력서는 **검색 키워드를 만드는 재료**로만 씁니다.
+> 이력서로 하는 일은 둘입니다 — **검색 키워드를 만드는 것**, 그리고 공고 본문과 맞대어
+> **겹친 낱말·빠진 낱말을 세는 것**. `겹침 5 · 공백 1` 은 눌러서 확인할 수 있는 사실이지만,
+> 그걸 비율 하나로 뭉치면 확인할 방법이 사라집니다. 그 선을 넘지 않습니다.
 
 <details>
 <summary><b>In English</b></summary>
@@ -42,7 +44,7 @@ What makes it different from a job aggregator:
 - **What is missing is shown.** Excluded postings are listed with company, role, and reason. Companies it could not judge are marked as unjudged rather than dropped. Silent omission is the failure mode this tool guards against hardest.
 - **No match score.** "This posting is an 87% fit for you" cannot be verified, so it is not produced. The resume is used only as material for building search keywords.
 
-Measured, not estimated: financial coverage is 48.9% (135 companies, Saramin) and 50.0% (30 companies, Wanted) on real pipeline output; 22% of postings carry no closing date at all; 562 regression tests pass with no network and no key.
+Measured, not estimated: financial coverage is 48.9% (135 companies, Saramin) and 50.0% (30 companies, Wanted) on real pipeline output; 22% of postings carry no closing date at all; 668 regression tests pass with no network and no key.
 
 Everything runs locally. Postings, resume, and home address never leave the machine.
 
@@ -75,8 +77,8 @@ Everything runs locally. Postings, resume, and home address never leave the mach
 | **0** | 준비물 확인 — Node · Claude Code | 2분 | 아니오 |
 | **1** | 설치 — 두 줄 | 1분 | 아니오 |
 | **2** | 키 1개 발급 | 5분 | **예. 없으면 없는 대로 돕니다** |
-| **3** | 첫 대화 — 이력서를 주면 검색 조건을 대신 만듭니다 | 2분 | 아니오 |
-| **4** | 위치 — 다닐 수 있는 범위를 정합니다 | 1분 | 아니오 |
+| **3** | 첫 대화 — 이력서를 주면 포지션·연차·낱말을 대신 뽑습니다 | 2분 | 아니오 |
+| **4** | 위치 — 다닐 수 있는 범위를 정합니다 (**실제로 거르는 조건은 이것뿐입니다**) | 1분 | 아니오 |
 | **5** | 첫 실행 — 상한 없이 전부 받습니다 | 20~35분 · **이때만** | 아니오 |
 | **6** | 매일 쓰는 화면 — 상태·메모·숨김 | — | — |
 
@@ -175,7 +177,7 @@ setx DATA_GO_KR_KEY "여기에 붙여넣기"
 
 ---
 
-### 3단계 · 첫 대화 — 이력서를 주면 검색 조건을 대신 만듭니다
+### 3단계 · 첫 대화 — 이력서 하나면 나머지는 대신 채웁니다
 
 <img src="docs/images/onboarding-1-keywords.png" alt="첫 대화 — 이력서를 읽고 뽑은 키워드를 사용자에게 먼저 확인받는 화면" width="100%">
 
@@ -185,6 +187,8 @@ setx DATA_GO_KR_KEY "여기에 붙여넣기"
 - **한글·영어를 둘 다 넣습니다.** `Product Manager`만 넣으면 `프로덕트 매니저` 공고를 통째로 놓칩니다. 실제로 예시 프로필에 `프로덕트 오너`가 빠져 **PO 공고 17건이 아무 오류 없이 사라진 적**이 있습니다
 - **연차는 공고를 버리는 데 쓰지 않습니다.** 목록을 나누는 데만 씁니다 — 신입이든 12년차든 같은 코드가 돕니다
 - **제외 키워드로 자른 것도 사라지지 않습니다.** 회사·직무·사유까지 리포트 하단에 실립니다
+- **확인 화면 1번, 위치 1번이 전부입니다.** 포지션·낱말·제외 키워드·관심 회사는 이력서에서 뽑아 **보여드리고 고칠 것만** 받습니다. 비워 둔 채로 끝내셔도 됩니다. 다만 **연차가 이력서에 없으면 그것만 따로 여쭙니다** — 넘겨짚으면 목록이 통째로 어긋나기 때문입니다
+- **포트폴리오는 선택입니다.** 직군에 따라 안 내도 되는 자리가 많습니다. 지금 없어도 그대로 진행되고, 필요한 공고에만 표시해 드립니다
 
 ---
 
@@ -214,7 +218,7 @@ setx DATA_GO_KR_KEY "여기에 붙여넣기"
 **두 번째 실행부터는 기본 200건**이며, 이 상한은 **새로 받아야 하는 공고만** 셉니다 — 이미 받아 둔 것까지 세면 목록 뒤쪽의 새 공고가 영영 안 받아집니다.
 
 - 중간에 끊겨도 처음부터 다시 돌지 않습니다. 단계마다 결과를 파일로 남기고 이어서 갑니다
-- 받아진 게 성한지 의심되면 `node skills/jd-search/scripts/test/run.mjs` — **네트워크도 키도 없이** 회귀 테스트 562건이 돕니다
+- 받아진 게 성한지 의심되면 `node skills/jd-search/scripts/test/run.mjs` — **네트워크도 키도 없이** 회귀 테스트 668건이 돕니다
 
 ---
 
@@ -273,7 +277,8 @@ node skills/jd-search/scripts/serve.mjs
 4 alive     마감 재확인 + 재공고 되찾기        ✅ 네 보드 모두
 5 finance   회사 → 공시 → 자금등급             ✅
 6 commute   상위 후보만 통근 정밀 실측 (선택)  ⏳ 미구현
-7 render    report.html                        ✅
+7 fit       이력서 ↔ 공고 겹침·공백 (선택)     ✅ 점수가 아니라 센 낱말입니다
+8 render    report.html                        ✅
   serve     상태 변경 · 추가 · 숨김            ✅ 로컬 전용
 ```
 
@@ -309,6 +314,29 @@ node skills/jd-search/scripts/serve.mjs
 **마감 표본을 못 본 보드는 못 봤다고 적습니다.** 점핏·잡코리아는 마감된 공고의 응답을 아직 확보하지 못해서, 살아있다고 단정하지 않고 `미검증`으로 남긴 뒤 다음 실행에서 다시 확인합니다.
 
 **날짜가 지났다는 이유로 마감 처리하지 않습니다.** 사람인 실측 40건 중 9건(22%)이 마감일 자체가 없는 상시채용·채용시 공고였습니다.
+
+---
+
+## 이 공고가 뭘 요구하는지 — 점수 대신 낱말로 보여드립니다
+
+이력서와 공고 본문을 **같은 사전**으로 훑어 세 가지를 냅니다.
+
+```
+가온랩스   [좋음 2025]
+서비스기획자 (커머스)
+└ 겹침 3 · B2B SaaS · 퍼널 분석 · 화면 설계
+└ 공백 1 · 헬스케어
+```
+
+- **겹침** — 공고에도 이력서에도 있는 낱말입니다. 자기소개서에 무엇을 앞세울지가 여기서 나옵니다
+- **공백** — 공고가 요구하는데 이력서에 없는 낱말입니다. 면접에서 물어볼 자리입니다
+- **근무조건**(재택·스톡옵션)은 겹침·공백에서 뺍니다. 이력서에 적을 것이 아니라 회사가 주는 것이라, "재택 공백"은 사실이 아니라 오해입니다
+
+**`겹침 3`은 셀 수 있지만 `fit 82`는 확인할 방법이 없습니다.** 그래서 숫자 하나로 뭉치지 않습니다.
+
+**못 읽은 공고를 "겹침 0"으로 적지 않습니다.** 사람인·인크루트에는 본문이 이미지 한 장뿐인 공고가 흔합니다. 못 읽은 것과 안 맞는 것을 같은 칸에 넣으면 그 공고들이 전부 목록 바닥으로 밀려 **조용히 사라집니다.** 그래서 판정은 세 갈래입니다 — 대조함 · 사전 밖 · 못 읽음. 정렬에서도 못 읽은 공고를 맨 아래로 보내지 않습니다.
+
+**사전이 곧 시야의 한계입니다.** [`jd-terms.yml`](skills/jd-search/references/jd-terms.yml)에 없는 낱말은 겹침으로도 공백으로도 나오지 않습니다. 자기 직군 낱말이 부족하면 그 파일에 줄을 더하면 되고, [PR로 보내 주셔도 됩니다](CONTRIBUTING.md).
 
 ---
 
@@ -395,7 +423,7 @@ DART **정형 API만 붙이면 2%p밖에 오르지 않습니다.** 구직자가 
 - **자동 지원 · 이력서 자동 제출** — 계정 정지 위험이 사용자에게 옵니다
 - **동의 없는 크롤링** — 공개 API가 없는 보드는 열 때마다 물어봅니다
 - **LinkedIn 수집** — 이 도구가 LinkedIn에 접속하는 경로는 **아예 만들지 않았습니다.** 저장한 페이지에 LinkedIn 공고가 섞여 있어도 받지 않고, 왜 안 받는지 말합니다. 제재가 이 컴퓨터가 아니라 **당신 계정**에 오기 때문입니다
-- **합격률처럼 보이는 숫자** — 검증할 수 없습니다
+- **합격률·궁합 점수처럼 보이는 숫자** — 검증할 수 없습니다. 겹친 낱말을 **세어서** 보여드리는 데까지가 선입니다
 - **추측으로 공고 버리기** — 판정이 불확실하면 버리지 않고 "미확인" 탭에 남깁니다
 
 ---
@@ -406,6 +434,7 @@ DART **정형 API만 붙이면 2%p밖에 오르지 않습니다.** 구직자가 
 
 - **자택 주소**는 프로필 파일에 남지만 **리포트에는 주소도 좌표도 나가지 않습니다**
 - **지원 이력**은 리포트에 기본으로 포함되지 않습니다. 넣으려면 `render.mjs --with-status`로 명시해야 합니다 — report.html은 공유될 수 있는 파일이기 때문입니다
+- **겹침·공백 낱말**도 같습니다. 겹친 낱말은 이력서에 무엇이 적혀 있는지를 그대로 드러내기 때문에, 리포트에 넣으려면 `render.mjs --with-fit`으로 명시해야 합니다. 손에 들고 보는 `serve` 화면에는 늘 나옵니다 — 그 화면은 이 컴퓨터를 벗어나지 않습니다
 - **`serve`는 `127.0.0.1`에만 열리고, 실행할 때마다 새 토큰을 요구합니다.** Host·Origin도 검사합니다 — 브라우저에 떠 있는 다른 사이트가 이 서버에 요청을 던질 수 있기 때문입니다. 브라우저를 자동으로 열지도 않습니다
 - **"삭제"는 목록에서 숨기는 것**이고 기록과 JD 원문은 남습니다. 같은 자리가 새 ID로 재공고되기 때문에, 지우면 이력이 끊기고 같은 회사에 두 번 지원하게 됩니다
 
