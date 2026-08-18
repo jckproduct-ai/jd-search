@@ -1,1 +1,5 @@
 blank_issues_enabled: true
+contact_links:
+  - name: 질문 · 사용기 · 아이디어
+    url: https://github.com/jckproduct-ai/jd-search/discussions
+    about: 버그가 아니라면 Discussions 가 편합니다. 설치에서 막힌 지점, 이렇게 되면 좋겠다 하는 것 전부 환영합니다
